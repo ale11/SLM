@@ -1,31 +1,82 @@
 #include "TurbModel_WVM.hpp"
 
-prm::prm() {}
-
-prm::~prm() {}
-
-void prm::get_eau(double *eref, double *aref, double *uref)
+void TurbModel_WVM::bkeuler(int ipar, double dt, double (*Gn)[3])
 {
+  double erhs[3], arhs[3], urhs[3];
+  double *eipar, *aipar, *uipar;
+
+  eipar = e[ipar];
+  aipar = a[ipar];
+  uipar = u[ipar];
+
+  calcRhs(erhs, arhs, urhs, Gn, eipar, aipar, uipar);
+
   for (int i = 0; i < 3; i++)
   {
-    eref[i] = e[i];
-    aref[i] = a[i];
-    uref[i] = u[i];
+    eipar[i] += dt*erhs[i];
+    aipar[i] += dt*arhs[i];
+    uipar[i] += dt*urhs[i];
   }
 }
 
-void prm::set_eau(double *eref, double *aref, double *uref)
+void TurbModel_WVM::rk4(int ipar, double dt, double (*Gn)[3], 
+                        double (*Gnph)[3], double (*Gnp1)[3])
 {
+  double erhs_1[3], erhs_2[3], erhs_3[3], erhs_4[3];
+  double arhs_1[3], arhs_2[3], arhs_3[3], arhs_4[3];
+  double urhs_1[3], urhs_2[3], urhs_3[3], urhs_4[3];
+
+  double *eipar, *aipar, *uipar;
+  double etemp[3], atemp[3], utemp[3];
+
+  eipar = e[ipar];
+  aipar = a[ipar];
+  uipar = u[ipar];
+
+  calcRhs(erhs_1, arhs_1, urhs_1, Gn, eipar, aipar, uipar);
+
   for (int i = 0; i < 3; i++)
   {
-    e[i] = eref[i];
-    a[i] = aref[i];
-    u[i] = uref[i];
+    etemp[i] = eipar[i] + 0.5*dt*erhs_1[i];
+    atemp[i] = aipar[i] + 0.5*dt*arhs_1[i];
+    utemp[i] = uipar[i] + 0.5*dt*urhs_1[i];
   }
+
+  calcRhs(erhs_2, arhs_2, urhs_2, Gnph, etemp, atemp, utemp);
+
+  for (int i = 0; i < 3; i++)
+  { 
+    etemp[i] = eipar[i] + 0.5*dt*erhs_2[i];
+    atemp[i] = aipar[i] + 0.5*dt*arhs_2[i];
+    utemp[i] = uipar[i] + 0.5*dt*urhs_2[i];
+  }
+
+  calcRhs(erhs_3, arhs_3, urhs_3, Gnph, etemp, atemp, utemp);
+
+  for (int i = 0; i < 3; i++)
+  {
+    etemp[i] = eipar[i] + dt*erhs_3[i];
+    atemp[i] = aipar[i] + dt*arhs_3[i];
+    utemp[i] = uipar[i] + dt*urhs_3[i];
+  }
+
+  calcRhs(erhs_4, arhs_4, urhs_4, Gnp1, etemp, atemp, utemp);
+
+  for (int i = 0; i < 3; i++)
+  {
+    eipar[i] += 1.0/6.0*dt*
+                (erhs_1[i] + 2.0*erhs_2[i] + 2.0*erhs_3[i] + erhs_4[i]);
+    aipar[i] += 1.0/6.0*dt*
+                (arhs_1[i] + 2.0*arhs_2[i] + 2.0*arhs_3[i] + arhs_4[i]);
+    uipar[i] += 1.0/6.0*dt*
+                (urhs_1[i] + 2.0*urhs_2[i] + 2.0*urhs_3[i] + urhs_4[i]);
+  }
+
 }
 
-void prm::calcRhs(double *erhs, double *arhs, double *urhs, double (*G)[3],
-		  double *eref, double *aref, double *uref)
+void TurbModel_WVM::calcRhs(double *erhs, double *arhs, double *urhs, 
+                            double (*G)[3], double *eref, double *aref, 
+                            double *uref)
 {
   double tempA[3];
   double tempB;
@@ -46,64 +97,22 @@ void prm::calcRhs(double *erhs, double *arhs, double *urhs, double (*G)[3],
     urhs[i] = -tempA[i] + 2.0*tempB*eref[i];
 }
 
-void prm::update(double dt, double (*Gn)[3], double (*Gnph)[3], 
-                 double (*Gnp1)[3])
-{
-  double erhs_1[3], erhs_2[3], erhs_3[3], erhs_4[3];
-  double arhs_1[3], arhs_2[3], arhs_3[3], arhs_4[3];
-  double urhs_1[3], urhs_2[3], urhs_3[3], urhs_4[3];
-
-  double etemp[3], atemp[3], utemp[3];
-
-  calcRhs(erhs_1, arhs_1, urhs_1, Gn, e, a, u);
-
-  for (int i = 0; i < 3; i++)
-  {
-    etemp[i] = e[i] + 0.5*dt*erhs_1[i];
-    atemp[i] = a[i] + 0.5*dt*arhs_1[i];
-    utemp[i] = u[i] + 0.5*dt*urhs_1[i];
-  }
-
-  calcRhs(erhs_2, arhs_2, urhs_2, Gnph, etemp, atemp, utemp);
-
-  for (int i = 0; i < 3; i++)
-  { 
-    etemp[i] = e[i] + 0.5*dt*erhs_2[i];
-    atemp[i] = a[i] + 0.5*dt*arhs_2[i];
-    utemp[i] = u[i] + 0.5*dt*urhs_2[i];
-  }
-
-  calcRhs(erhs_3, arhs_3, urhs_3, Gnph, etemp, atemp, utemp);
-
-  for (int i = 0; i < 3; i++)
-  {
-    etemp[i] = e[i] + dt*erhs_3[i];
-    atemp[i] = a[i] + dt*arhs_3[i];
-    utemp[i] = u[i] + dt*urhs_3[i];
-  }
-
-  calcRhs(erhs_4, arhs_4, urhs_4, Gnp1, etemp, atemp, utemp);
-
-  for (int i = 0; i < 3; i++)
-  {
-    e[i] += 1.0/6.0*dt*(erhs_1[i] + 2.0*erhs_2[i] + 2.0*erhs_3[i] + erhs_4[i]);
-    a[i] += 1.0/6.0*dt*(arhs_1[i] + 2.0*arhs_2[i] + 2.0*arhs_3[i] + arhs_4[i]);
-    u[i] += 1.0/6.0*dt*(urhs_1[i] + 2.0*urhs_2[i] + 2.0*urhs_3[i] + urhs_4[i]);
-  }
-
-}
-
-TurbModel_WVM::TurbModel_WVM() 
+TurbModel_WVM::TurbModel_WVM(const char *name)
 {
   nshells = 32;
   nmodes = 2000;
+  npar = nshells*nmodes;
 
-  par = new prm[nshells*nmodes][1];
+  e = new double[npar][3];
+  a = new double[npar][3];
+  u = new double[npar][3];
 }
 
 TurbModel_WVM::~TurbModel_WVM()
 {
-  delete [] par;
+  delete[] e;
+  delete[] a;
+  delete[] u;
 }
 
 void TurbModel_WVM::initialHookScalarRansTurbModel(double *rey)
@@ -134,6 +143,8 @@ void TurbModel_WVM::initialHookScalarRansTurbModel(double *rey)
   for (int ishells = 0; ishells < nshells; ishells++)
     for (int imodes = 0; imodes < nmodes; imodes++)
     {
+      int ipar = ishells*nmodes + imodes;
+
       double theta;
       double r[3], s[3];
 
@@ -143,44 +154,35 @@ void TurbModel_WVM::initialHookScalarRansTurbModel(double *rey)
       theta = acos(2.0*u2 - 1.0);
       double phi = 2.0*M_PI*u1;
       
-      double e0[3];
-      e0[0] = sin(theta)*cos(phi);
-      e0[1] = sin(theta)*sin(phi);
-      e0[2] = cos(theta);
+      e[ipar][0] = sin(theta)*cos(phi);
+      e[ipar][1] = sin(theta)*sin(phi);
+      e[ipar][2] = cos(theta);
 
       // eddy-axis vector
       double eye[3] = {1.0, 0.0, 0.0};
-      vecCrossVec3d(r, eye, e0);
-      vecCrossVec3d(s, r, e0);
+      vecCrossVec3d(r, eye, e[ipar]);
+      vecCrossVec3d(s, r, e[ipar]);
       normVec3d(r);
       normVec3d(s);
       theta = ( (double)rand()/RAND_MAX )*2.0*M_PI;
 
-      double a0[3];
       for (int i = 0; i < 3; i++)
-	a0[i] = cos(theta)*r[i] + sin(theta)*s[i];
+	a[ipar][i] = cos(theta)*r[i] + sin(theta)*s[i];
 
       // velocity vector
       theta = ( (double)rand()/RAND_MAX )*2.0*M_PI;
 
-      double u0[3];
+      double umag = sqrt(2.0*nshells*Enukdk[ishells]);
       for (int i = 0; i < 3; i++)
-      {
-	u0[i] = cos(theta)*r[i] + sin(theta)*s[i];
-	u0[i] *= sqrt(2.0*nshells*Enukdk[ishells]);
-      }
-
-      // set initial values
-      int index = ishells*nmodes + imodes;
-      par[index]->set_eau(e0, a0, u0);
+	u[ipar][i] = umag*( cos(theta)*r[i] + sin(theta)*s[i] );
 
       // initial Reynolds stresses
-      rey[0] += u0[0]*u0[0];
-      rey[1] += u0[1]*u0[1];
-      rey[2] += u0[2]*u0[2];
-      rey[3] += u0[0]*u0[1];
-      rey[4] += u0[0]*u0[2];
-      rey[5] += u0[1]*u0[2];
+      rey[0] += u[ipar][0]*u[ipar][0];
+      rey[1] += u[ipar][1]*u[ipar][1];
+      rey[2] += u[ipar][2]*u[ipar][2];
+      rey[3] += u[ipar][0]*u[ipar][1];
+      rey[4] += u[ipar][0]*u[ipar][2];
+      rey[5] += u[ipar][1]*u[ipar][2];
     }
 
   // normalize
@@ -196,25 +198,17 @@ void TurbModel_WVM::calcReStress(double *rey, double (*Gn)[3],
                                  double dt)
 {
   // loop through all the particles
-  for (int ishells = 0; ishells < nshells; ishells++)
-    for (int imodes = 0; imodes < nmodes; imodes++)
-    {
-      double enp1[3], anp1[3], unp1[3];
-      int index = ishells*nmodes + imodes;
+  for (int ipar = 0; ipar < npar; ipar++)
+  {
+    rk4(ipar, dt, Gn, Gnph, Gnp1);
 
-      prm *ipar = par[index];
-
-      ipar->update(dt, Gn, Gnph, Gnp1);
-
-      ipar->get_eau(enp1, anp1, unp1);
-
-      rey[0] += unp1[0]*unp1[0];
-      rey[1] += unp1[1]*unp1[1];
-      rey[2] += unp1[2]*unp1[2];
-      rey[3] += unp1[0]*unp1[1];
-      rey[4] += unp1[0]*unp1[2];
-      rey[5] += unp1[1]*unp1[2];
-    }
+    rey[0] += u[ipar][0]*u[ipar][0];
+    rey[1] += u[ipar][1]*u[ipar][1];
+    rey[2] += u[ipar][2]*u[ipar][2];
+    rey[3] += u[ipar][0]*u[ipar][1];
+    rey[4] += u[ipar][0]*u[ipar][2];
+    rey[5] += u[ipar][1]*u[ipar][2];
+  }
 
   // normalize
   for (int i = 0; i < 6; i++)

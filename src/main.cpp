@@ -1,9 +1,11 @@
 #include "TurbModel_WVM.hpp"
 
 /* Syntax for calling main:
-   ./main def ratio
-   where def = "axc", "axe", etc, and ratio is the ratio of rotation to 
-   strain, which needs to be specified for some deformations only.
+   ./main model def ratio
+   where model: particle model to be used
+	 def  : "axc", "axe", etc.
+         ratio: is the ratio of rotation to strain, which needs to be specified
+                for some deformations only.
 */
 
 void WifromWij(double *Wi, double (*Wij)[3]);
@@ -44,17 +46,23 @@ int main(int argc, char *argv[])
 
   enum def_types {axc, axe, ps, rs, seq, thd};
 
-  if (strcmp(argv[1], "axc") == 0)
+  if (argc < 3)
+  {
+    cout << "Not enough input arguments." << endl;
+    return 0;
+  }
+
+  if (strcmp(argv[2], "axc") == 0)
     def = axc;
-  else if (strcmp(argv[1], "axe") == 0)
+  else if (strcmp(argv[2], "axe") == 0)
     def = axe;
-  else if (strcmp(argv[1], "ps") == 0)
+  else if (strcmp(argv[2], "ps") == 0)
     def = ps;
-  else if (strcmp(argv[1], "rs") == 0)
+  else if (strcmp(argv[2], "rs") == 0)
     def = rs;
-  else if (strcmp(argv[1], "seq") == 0)
+  else if (strcmp(argv[2], "seq") == 0)
     def = seq;
-  else if (strcmp(argv[1], "thd") == 0)
+  else if (strcmp(argv[2], "thd") == 0)
     def = thd;
   else
     cout << "Deformation specified not available" << endl;
@@ -62,7 +70,7 @@ int main(int argc, char *argv[])
   switch (def)
   {
   case axc:
-    if (argc != 2) cout << "Wrong number of inputs specified." << endl;
+    if (argc != 3) cout << "Wrong number of inputs specified." << endl;
     cout << "Deformation: axc" << endl;
     S = 1.0;
     W = 0.0;
@@ -73,7 +81,7 @@ int main(int argc, char *argv[])
     dt = 0.05;
     break;
   case axe:
-    if (argc != 2) cout << "Wrong number of inputs specified." << endl;
+    if (argc != 3) cout << "Wrong number of inputs specified." << endl;
     cout << "Deformation: axe" << endl;
     S = 1.0;
     W = 0.0;
@@ -84,7 +92,7 @@ int main(int argc, char *argv[])
     dt = 0.05;
     break;
   case ps:
-    if (argc != 2) cout << "Wrong number of inputs specified." << endl;
+    if (argc != 3) cout << "Wrong number of inputs specified." << endl;
     cout << "Deformation: ps" << endl;
     S = 1.0;
     W = 0.0;
@@ -94,20 +102,20 @@ int main(int argc, char *argv[])
     dt = 0.05;
     break;
   case rs:
-    if (argc != 3) cout << "Wrong number of inputs specified." << endl;
-    cout << "Deformation: rs " << argv[2] << endl;
+    if (argc != 4) cout << "Wrong number of inputs specified." << endl;
+    cout << "Deformation: rs " << argv[3] << endl;
     S = 1.0;
-    W = atof(argv[2])*S;
+    W = atof(argv[3])*S;
     Sij[0][1] = 0.5*S;
     Sij[1][0] = 0.5*S;
     Wij[0][1] = 0.5*W;
     Wij[1][0] = -0.5*W;
     nt = 200;
-    if (atof(argv[2]) >= 4.0) dt = 0.025;
+    if (atof(argv[3]) >= 4.0) dt = 0.025;
     else dt = 0.05; 
     break;
   case seq:
-    if (argc != 2) cout << "Wrong number of inputs specified." << endl;
+    if (argc != 3) cout << "Wrong number of inputs specified." << endl;
     cout << "Deformation: seq " << endl;
     S = -1.0;
     W = 1.5*S;
@@ -122,10 +130,10 @@ int main(int argc, char *argv[])
     dt = 0.05;
     break;
   case thd:
-    if (argc != 3) cout << "Wrong number of inputs specified." << endl;
-    cout << "Deformation: thd "<< argv[2] << endl;
+    if (argc != 4) cout << "Wrong number of inputs specified." << endl;
+    cout << "Deformation: thd "<< argv[3] << endl;
     S = 1.0;
-    W = atof(argv[2])*S;
+    W = atof(argv[3])*S;
     Sij[0][1] = 0.5*S;
     Sij[1][0] = 0.5*S;
     Sij[1][2] = 0.5*S;
@@ -152,7 +160,7 @@ int main(int argc, char *argv[])
   tke   = new double [nt+1];
   G     = new double [2*nt+1][3][3]; 
   it_Wi = new double [nt+1][3];    
-  wvm   = new TurbModel_WVM;
+  wvm   = new TurbModel_WVM(argv[1]);
 
   // Initial condition
   t = 0.0;
