@@ -37,8 +37,11 @@ int main(int argc, char *argv[])
   double Wi[3] = {0.0, 0.0, 0.0};    // vorticity vec
   double Wihat[3] = {0.0, 0.0, 0.0}; // vorticity vec used for diagonalization
   double *st;         // normalized time at each time step
-  double (*rey)[6];   // Reynolds stresses
-  double (*tke);      // turbulent kinetic energy
+  double struc[12];   // comp and dim tensors
+  double tke_ndim;    // turbulent kinetic energy (non-dimensionalized)
+  double tke_init;    // initial turbulent kinetic energy
+  double eps_ndim;    // dissipation of TKE (non-dimensionalized)
+  double eps_init;    // initial dissipation of TKE
   double (*G)[3][3];  // velocity deformation tensor
   double (*it_Wi)[3]; // vorticity vec at each time step
 
@@ -78,7 +81,7 @@ int main(int argc, char *argv[])
     Sij[1][1] = -0.5*S;
     Sij[2][2] = -0.5*S;
     nt = 100;
-    dt = 0.05;
+    dt = 0.025;
     break;
   case axe:
     if (argc != 3) cout << "Wrong number of inputs specified." << endl;
@@ -89,7 +92,7 @@ int main(int argc, char *argv[])
     Sij[1][1] = 0.5*S;
     Sij[2][2] = 0.5*S;
     nt = 100;
-    dt = 0.05;
+    dt = 0.025;
     break;
   case ps:
     if (argc != 3) cout << "Wrong number of inputs specified." << endl;
@@ -98,8 +101,8 @@ int main(int argc, char *argv[])
     W = 0.0;
     Sij[0][0] = S;
     Sij[1][1] = -S;
-    nt = 100;
-    dt = 0.05;
+    nt = 500;
+    dt = 0.005;
     break;
   case rs:
     if (argc != 4) cout << "Wrong number of inputs specified." << endl;
@@ -110,9 +113,9 @@ int main(int argc, char *argv[])
     Sij[1][0] = 0.5*S;
     Wij[0][1] = 0.5*W;
     Wij[1][0] = -0.5*W;
-    nt = 200;
+    nt = 1000;
     if (atof(argv[3]) >= 4.0) dt = 0.025;
-    else dt = 0.05; 
+    else dt = 0.005; 
     break;
   case seq:
     if (argc != 3) cout << "Wrong number of inputs specified." << endl;
@@ -156,8 +159,6 @@ int main(int argc, char *argv[])
 
   // Data allocation
   st    = new double [nt+1];
-  rey   = new double [nt+1][6];
-  tke   = new double [nt+1];
   G     = new double [2*nt+1][3][3]; 
   it_Wi = new double [nt+1][3];    
   wvm   = new TurbModel_WVM(argv[1]);
@@ -172,15 +173,31 @@ int main(int argc, char *argv[])
       G[0][i][j] = Sij[i][j] + Wij[i][j];
   }
 
-  wvm->initialHookScalarRansTurbModel(rey[0]);
-  tke[0] = 0.5*(rey[0][0] + rey[0][1] + rey[0][2]);
+  wvm->initialHookScalarRansTurbModel(struc,eps_init);
+  tke_init = 0.5*(struc[0] + struc[1] + struc[2]);
+  double q2 = 2.0*tke_init;
+
+  fid = fopen(history, "w");
+  if (fid == NULL)
+  {
+    cout << "Could not open file " << history << endl;
+    return 0;
+  }
+  fprintf(fid,"Variables = \"st\" \"e_st\" \"rey0_2k\" \"rey1_2k\" ");
+  fprintf(fid,"\"rey2_2k\" \"rey3_2k\" \"rey4_2k\" \"rey5_2k\" ");
+  fprintf(fid,"\"dim0_2k\" \"dim1_2k\" \"dim2_2k\" \"dim3_2k\" \"dim4_2k\" ");
+  fprintf(fid,"\"dim5_2k\" \"tke\" \"eps\" \n");
+  fprintf(fid,"Zone T = \"%s\" F = point\n",argv[1]);
+  fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t",
+	  st[0], exp(st[0]), struc[0]/q2, struc[1]/q2, struc[2]/q2, 
+          struc[3]/q2, struc[4]/q2, struc[5]/q2);
+  fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\n",
+          struc[6]/q2, struc[7]/q2, struc[8]/q2, struc[9]/q2, struc[10]/q2, 
+          struc[11]/q2, 1.0, 1.0);
 
   // Loop through time
-  for (int n = 0; n < nt; n++) // 20 is replacing nt
+  for (int n = 0; n < nt; n++) // 1 is replacing nt
   {
-    // initialize Reynolds stresses
-    for (int i = 0; i < 6; i++) rey[n+1][i] = 0.0;
-
     // compute time
     t += dt;
     st[n+1] = fabs(S)*t;
@@ -268,40 +285,32 @@ int main(int argc, char *argv[])
       break;
     }
 
+    // update dissipation
+    eps_ndim = wvm->updateDissipation(G[2*n], dt);
+    eps_ndim /= eps_init;
+    
     // compute Reynolds stresses and TKE
-    wvm->calcReStress(rey[n+1], G[2*n], G[2*n+1], G[2*n+2], dt);
-    tke[n+1] = 0.5*(rey[n+1][0] + rey[n+1][1] + rey[n+1][2]);
+    wvm->calcReStress(struc, G[2*n], G[2*n+1], G[2*n+2], dt);
+    tke_ndim = 0.5*(struc[0] + struc[1] + struc[2]);
+    double q2 = 2.0*tke_ndim;
+    tke_ndim /= tke_init;
 
-    // output iteration number
+    // write data
+    fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t",
+	    st[n+1], exp(st[n+1]), struc[0]/q2, struc[1]/q2, struc[2]/q2,
+	    struc[3]/q2, struc[4]/q2, struc[5]/q2);
+    fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\n",
+	    struc[6]/q2, struc[7]/q2, struc[8]/q2, struc[9]/q2, struc[10]/q2,
+	    struc[11]/q2, tke_ndim, eps_ndim);
+
+    // Output iteration number
     cout << "iter: " << st[n+1] << endl;
   }
 
-  // Write data
-  fid = fopen(history, "w");
-  if (fid == NULL)
-    {
-      cout << "Could not open file " << history << endl;
-      return 0;
-    }
-  fprintf(fid,"Variables = \"st\" \"e_st\" \"rey0_2k\" \"rey1_2k\" ");
-  fprintf(fid,"\"rey2_2k\" \"rey3_2k\" \"rey4_2k\" \"rey5_2k\"\n");
-
-  fprintf(fid,"Zone T = \"%s\" F = point\n",argv[1]);
-
-  for (int n = 0; n < nt+1; n++) // 21 replaces nt+1
-  {
-    double twotke = 2.0*tke[n];
-    fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\n",
-	    st[n], exp(st[n]), rey[n][0]/twotke, rey[n][1]/twotke, 
-	    rey[n][2]/twotke, rey[n][3]/twotke, rey[n][4]/twotke, 
-	    rey[n][5]/twotke);
-  }
   fclose(fid);
 
   // Cleanup
   delete [] st;
-  delete [] rey;
-  delete [] tke;
   delete [] G;
   delete [] it_Wi;
   delete wvm;

@@ -14,6 +14,6 @@ prm_vars: Makefile
 
 .PHONY: clean
 clean:
-	rm *~
 	@cd $(SRCDIR) ; rm *.o *~
 	@cd $(BINDIR) ; rm main prm_vars
+	rm *~

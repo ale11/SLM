@@ -66,4 +66,15 @@ inline void matPlusMat3d(double (*M1)[3], double (*M2)[3], double (*M3)[3])
       M1[i][j] = M2[i][j] + M3[i][j];
 }
 
+inline void matTimesMat3d(double (*M1)[3], double (*M2)[3], double (*M3)[3])
+{
+  for (int i = 0; i < 3; i++)
+    for (int j = 0; j < 3; j++)
+    {
+      M1[i][j] = 0.0;
+      for (int k = 0; k < 3; k++)
+	M1[i][j] += M2[i][k]*M3[k][j];
+    }
+}
+
 #endif
