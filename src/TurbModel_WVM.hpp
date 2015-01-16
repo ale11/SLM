@@ -27,19 +27,29 @@ public:
 
   // Memeber functions
 public:
-  void initialHookScalarRansTurbModel(double *struc, double &eps_init);
+  void initialHookScalarRansTurbModel(double Stau, double *struc, 
+                                      double &eps_init);
 
-  void bkeuler(double dt, double (*Gn)[3]);
+  void fwEuler(double dt, double (*Gn)[3]);
+
+  void Heun(double dt, double (*Gn)[3]);
   
   void rk4(double dt, double (*Gn)[3], double (*Gnph)[3], double (*Gnp1)[3]);
   
   void calcRhs(double *erhs, double *arhs, double *urhs, double (*G)[3],
 	       double *eref, double *aref, double *uref, double dt);
 
-  double updateDissipation(double (*Gn)[3], double dt);
+  void driftCoeff(double *drift, double (*G)[3], double *eref, double *uref);
+
+  void diffCoeff(double (*diff)[3], double *eref, double *uref);
+
+  double rhsDissipation(double (*Gn)[3], double dt);
 
   void calcTurbTimeScale();
 
-  void calcReStress(double *struc, double (*Gn)[3], double (*Gnph)[3], 
-                    double (*Gnp1)[3], double dt);
+  void calcTurbStatistics();
+
+  void calcReStress(double *struc, double &eps_main, double (*Gn)[3], 
+                    double (*Gnph)[3], double (*Gnp1)[3], double dt, 
+                    char* tIntName);
 };

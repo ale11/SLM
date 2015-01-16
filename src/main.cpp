@@ -1,11 +1,8 @@
 #include "TurbModel_WVM.hpp"
 
 /* Syntax for calling main:
-   ./main model def ratio
-   where model: particle model to be used
-	 def  : "axc", "axe", etc.
-         ratio: is the ratio of rotation to strain, which needs to be specified
-                for some deformations only.
+   ./main input_file
+   where input_file is the name of the input file.
 */
 
 void WifromWij(double *Wi, double (*Wij)[3]);
@@ -18,16 +15,22 @@ int main(int argc, char *argv[])
   // Parameters & variables
   int nt;               // number of time steps
   int def;              // type of deformation
+  int ierr;             // error flag for reading inputs
 
   bool seq_axe;                   // used to switch from axe to axc def
   FILE *fid;                      // file ID
   char history[] = "history.dat"; // history file
+  char buffer[20];
+  char model[10];                 // particle model
+  char def_name[10];              // name for the type of deformation
+  char tIntName[10];              // time integration name
 
   double dt;            // increment for the time steps
   double t;             // time
   double ststar = 0.0;  // for sequential simulations
   double S;             // rate-of-strain parameter
   double W;             // rate-of-rotation parameter
+  double WoverS;        // W/S
   double Sij[3][3] = {{0.0, 0.0, 0.0},  // rate-of-strain tensor 
                       {0.0, 0.0, 0.0}, 
                       {0.0, 0.0, 0.0}};
@@ -37,11 +40,14 @@ int main(int argc, char *argv[])
   double Wi[3] = {0.0, 0.0, 0.0};    // vorticity vec
   double Wihat[3] = {0.0, 0.0, 0.0}; // vorticity vec used for diagonalization
   double *st;         // normalized time at each time step
+  
+  double Stau_init;   // initial Sk/eps 
   double struc[12];   // comp and dim tensors
   double tke_ndim;    // turbulent kinetic energy (non-dimensionalized)
   double tke_init;    // initial turbulent kinetic energy
   double eps_ndim;    // dissipation of TKE (non-dimensionalized)
   double eps_init;    // initial dissipation of TKE
+  
   double (*G)[3][3];  // velocity deformation tensor
   double (*it_Wi)[3]; // vorticity vec at each time step
 
@@ -49,23 +55,52 @@ int main(int argc, char *argv[])
 
   enum def_types {axc, axe, ps, rs, seq, thd};
 
-  if (argc < 3)
+  // Read input file
+  fid = fopen(argv[1],"r");
+  if (fid == NULL)
   {
-    cout << "Not enough input arguments." << endl;
+    cout << "Could not open file input.dat" << endl;
     return 0;
   }
 
-  if (strcmp(argv[2], "axc") == 0)
+  ierr = 0;
+  ierr += fscanf(fid,"%s = %s", buffer, model);
+  ierr += fscanf(fid,"%s = %s", buffer, def_name);
+  ierr += fscanf(fid,"%s = %d", buffer, &nt);
+  ierr += fscanf(fid,"%s = %lf", buffer, &dt);
+  ierr += fscanf(fid,"%s = %lf", buffer, &WoverS);
+  ierr += fscanf(fid,"%s = %lf", buffer, &Stau_init);
+  ierr += fscanf(fid,"%s = %s", buffer, tIntName);
+
+  if (ierr !=14)
+  {
+    cout << "Could not read all of the inputs" << endl;
+    return 0;
+  };
+
+  fclose(fid);
+
+  cout << "--------------------------------" << endl;
+  cout << "Particle model: " << model << endl;
+  cout << "Deformation   : " << def_name << endl;
+  cout << "Time integ.   : " << tIntName << endl;
+  cout << "nt            : " << nt << endl;
+  cout << "dt            : " << dt << endl;
+  cout << "W/S           : " << WoverS << endl;
+  cout << "Initial Stau  : " << Stau_init << endl;
+  cout << "--------------------------------" << endl;
+
+  if (strcmp(def_name, "axc") == 0)
     def = axc;
-  else if (strcmp(argv[2], "axe") == 0)
+  else if (strcmp(def_name, "axe") == 0)
     def = axe;
-  else if (strcmp(argv[2], "ps") == 0)
+  else if (strcmp(def_name, "ps") == 0)
     def = ps;
-  else if (strcmp(argv[2], "rs") == 0)
+  else if (strcmp(def_name, "rs") == 0)
     def = rs;
-  else if (strcmp(argv[2], "seq") == 0)
+  else if (strcmp(def_name, "seq") == 0)
     def = seq;
-  else if (strcmp(argv[2], "thd") == 0)
+  else if (strcmp(def_name, "thd") == 0)
     def = thd;
   else
     cout << "Deformation specified not available" << endl;
@@ -73,55 +108,36 @@ int main(int argc, char *argv[])
   switch (def)
   {
   case axc:
-    if (argc != 3) cout << "Wrong number of inputs specified." << endl;
-    cout << "Deformation: axc" << endl;
     S = 1.0;
     W = 0.0;
     Sij[0][0] = S;
     Sij[1][1] = -0.5*S;
     Sij[2][2] = -0.5*S;
-    nt = 100;
-    dt = 0.025;
     break;
   case axe:
-    if (argc != 3) cout << "Wrong number of inputs specified." << endl;
-    cout << "Deformation: axe" << endl;
     S = 1.0;
     W = 0.0;
     Sij[0][0] = -S;
     Sij[1][1] = 0.5*S;
     Sij[2][2] = 0.5*S;
-    nt = 100;
-    dt = 0.025;
     break;
   case ps:
-    if (argc != 3) cout << "Wrong number of inputs specified." << endl;
-    cout << "Deformation: ps" << endl;
     S = 1.0;
     W = 0.0;
     Sij[0][0] = S;
     Sij[1][1] = -S;
-    nt = 500;
-    dt = 0.005;
     break;
   case rs:
-    if (argc != 4) cout << "Wrong number of inputs specified." << endl;
-    cout << "Deformation: rs " << argv[3] << endl;
     S = 1.0;
-    W = atof(argv[3])*S;
+    W = WoverS*S;
     Sij[0][1] = 0.5*S;
     Sij[1][0] = 0.5*S;
     Wij[0][1] = 0.5*W;
     Wij[1][0] = -0.5*W;
-    nt = 1000;
-    if (atof(argv[3]) >= 4.0) dt = 0.025;
-    else dt = 0.005; 
     break;
   case seq:
-    if (argc != 3) cout << "Wrong number of inputs specified." << endl;
-    cout << "Deformation: seq " << endl;
     S = -1.0;
-    W = 1.5*S;
+    W = WoverS*S;
     Sij[0][0] = S;
     Sij[1][1] = -0.5*S;
     Sij[2][2] = -0.5*S;
@@ -129,14 +145,10 @@ int main(int argc, char *argv[])
     Wij[2][1] = 0.5*W;
     WifromWij(Wi,Wij);
     seq_axe = true;
-    nt = 100;
-    dt = 0.05;
     break;
   case thd:
-    if (argc != 4) cout << "Wrong number of inputs specified." << endl;
-    cout << "Deformation: thd "<< argv[3] << endl;
     S = 1.0;
-    W = atof(argv[3])*S;
+    W = WoverS*S;
     Sij[0][1] = 0.5*S;
     Sij[1][0] = 0.5*S;
     Sij[1][2] = 0.5*S;
@@ -149,8 +161,6 @@ int main(int argc, char *argv[])
     Wihat[0] = -0.5*Wi[0] + 0.0*Wi[1] + 0.5*Wi[2];
     Wihat[1] = 0.25*Wi[0] - 0.25*sqrt(2.0)*Wi[1] + 0.25*Wi[2];
     Wihat[2] = 0.25*Wi[0] + 0.25*sqrt(2.0)*Wi[1] + 0.25*Wi[2];
-    nt = 200;
-    dt = 0.025;
     break;
   default:
     cout << "Not a valid deformation" << endl;
@@ -161,7 +171,7 @@ int main(int argc, char *argv[])
   st    = new double [nt+1];
   G     = new double [2*nt+1][3][3]; 
   it_Wi = new double [nt+1][3];    
-  wvm   = new TurbModel_WVM(argv[1]);
+  wvm   = new TurbModel_WVM(model);
 
   // Initial condition
   t = 0.0;
@@ -173,7 +183,7 @@ int main(int argc, char *argv[])
       G[0][i][j] = Sij[i][j] + Wij[i][j];
   }
 
-  wvm->initialHookScalarRansTurbModel(struc,eps_init);
+  wvm->initialHookScalarRansTurbModel(Stau_init,struc,eps_init);
   tke_init = 0.5*(struc[0] + struc[1] + struc[2]);
   double q2 = 2.0*tke_init;
 
@@ -187,7 +197,7 @@ int main(int argc, char *argv[])
   fprintf(fid,"\"rey2_2k\" \"rey3_2k\" \"rey4_2k\" \"rey5_2k\" ");
   fprintf(fid,"\"dim0_2k\" \"dim1_2k\" \"dim2_2k\" \"dim3_2k\" \"dim4_2k\" ");
   fprintf(fid,"\"dim5_2k\" \"tke\" \"eps\" \n");
-  fprintf(fid,"Zone T = \"%s\" F = point\n",argv[1]);
+  fprintf(fid,"Zone T = \"%s\" F = point\n", model);
   fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t",
 	  st[0], exp(st[0]), struc[0]/q2, struc[1]/q2, struc[2]/q2, 
           struc[3]/q2, struc[4]/q2, struc[5]/q2);
@@ -284,16 +294,13 @@ int main(int argc, char *argv[])
 	}
       break;
     }
-
-    // update dissipation
-    eps_ndim = wvm->updateDissipation(G[2*n], dt);
-    eps_ndim /= eps_init;
     
     // compute Reynolds stresses and TKE
-    wvm->calcReStress(struc, G[2*n], G[2*n+1], G[2*n+2], dt);
+    wvm->calcReStress(struc, eps_ndim, G[2*n], G[2*n+1], G[2*n+2], dt, tIntName);
     tke_ndim = 0.5*(struc[0] + struc[1] + struc[2]);
     double q2 = 2.0*tke_ndim;
     tke_ndim /= tke_init;
+    eps_ndim /= eps_init;
 
     // write data
     fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t",
