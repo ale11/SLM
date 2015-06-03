@@ -19,6 +19,7 @@ public:
   double (*u)[3];
 
   double eps, tau;
+  double M[3][3][3][3], e2[3][3], e4[3][3][3][3];
 
   default_random_engine generator;
   normal_distribution<double> distribution;
@@ -28,11 +29,14 @@ public:
   // Memeber functions
 public:
   void initialHookScalarRansTurbModel(double Stau, double *struc, 
-                                      double &eps_init);
+                                      double &eps_init, double *prod,
+                                      double *rapRedi, double (*Gn)[3]);
 
   void fwEuler(double dt, double (*Gn)[3]);
 
   void Heun(double dt, double (*Gn)[3]);
+
+  void semiHeun(double dt, double (*Gn)[3]);
   
   void rk4(double dt, double (*Gn)[3], double (*Gnph)[3], double (*Gnp1)[3]);
   
@@ -49,7 +53,8 @@ public:
 
   void calcTurbStatistics();
 
-  void calcReStress(double *struc, double &eps_main, double (*Gn)[3], 
+  void calcReStress(double *struc, double &eps_main, double *prod, 
+                    double *rRedi, double *sRediEps, double (*Gn)[3], 
                     double (*Gnph)[3], double (*Gnp1)[3], double dt, 
                     char* tIntName);
 };

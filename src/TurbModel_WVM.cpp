@@ -7,7 +7,7 @@ TurbModel_WVM::TurbModel_WVM(const char *name)
   npar = nshells*nmodes;
 
   Cn = 2.2;
-  Cv = 1.0;
+  Cv = 1.5; //1.0;
   Ceps1 = 1.5;
   Ceps2 = 11.0/6.0;
   Ceps3 = 0.01;
@@ -25,7 +25,10 @@ TurbModel_WVM::~TurbModel_WVM()
 }
 
 void TurbModel_WVM::initialHookScalarRansTurbModel(double Stau, double *struc,
-						   double &eps_init)
+						   double &eps_init, 
+                                                   double *prod, 
+                                                   double *rRedi, 
+                                                   double (*Gn)[3])
 {
   srand(time(NULL));
   for (int i = 0; i < 6; i++)
@@ -109,6 +112,26 @@ void TurbModel_WVM::initialHookScalarRansTurbModel(double Stau, double *struc,
   }
   eps_init = eps;
 
+  int index[3][3] = { {0, 3, 4}, {3, 1, 5}, {4, 5, 2} };
+  // production
+  for (int i = 0; i < 3; i++)
+    for (int j = i; j < 3; j++)
+      for (int k = 0; k < 3; k++)
+      {
+	prod[index[i][j]] = -rey[index[i][k]]*Gn[j][k]
+	                    -rey[index[j][k]]*Gn[i][k];
+      }
+
+  // rapid redistribution
+  for (int i = 0; i < 3; i++)
+    for (int j = i; j < 3; j++)
+    {
+      rRedi[index[i][j]] = 0.0;
+      for (int k = 0; k < 3; k++)
+	for (int l = 0; l < 3; l++)
+          rRedi[index[i][j]] += 2.0*Gn[k][l]*(M[i][l][j][k] + M[j][l][i][k]);
+    }
+
   // output to screen
   cout << "Simulated TKE: " << tke << endl;
   cout << "Exact TKE    : " << 0.25 << endl;
@@ -146,6 +169,52 @@ void TurbModel_WVM::fwEuler(double dt, double (*Gn)[3])
       uipar[i] += drift[i+3]*dt + bdW[i];
     }
   }
+  calcTurbStatistics();
+  calcTurbTimeScale();
+}
+
+void TurbModel_WVM::semiHeun(double dt, double (*Gn)[3])
+{
+  double eps_rhs = rhsDissipation(Gn, dt);
+  eps += dt*eps_rhs;
+
+  for (int ipar = 0; ipar < npar; ipar++)
+  {    
+    double *evec = e[ipar];
+    double *uvec = u[ipar];
+
+    // -------------------------------------------------------------------------
+    // Deterministic component
+    // -------------------------------------------------------------------------
+    double drift_0[6], diff_0[3][3]; 
+    driftCoeff(drift_0, Gn, evec, uvec);
+    diffCoeff(diff_0, evec, uvec);
+
+    double dW_0, bdW_0[3] = {0.0, 0.0, 0.0};
+    for (int i = 0; i < 3; i++)
+    {
+      dW_0 = distribution(generator)*sqrt(dt);
+      for (int j = 0; j < 3; j++)
+        bdW_0[j] += diff_0[j][i]*dW_0;
+    }
+
+    double ebar[3], ubar[3];
+    for (int i = 0; i < 3; i++)
+    {
+      ebar[i] = evec[i] + drift_0[i]*dt;
+      ubar[i] = uvec[i] + drift_0[i+3]*dt + bdW_0[i];
+    }
+
+    double drift_bar[6];
+    driftCoeff(drift_bar, Gn, ebar, ubar);
+
+    for (int i = 0; i < 3; i++)
+    {
+      evec[i] += 0.5*(drift_bar[i] + drift_0[i])*dt;
+      uvec[i] += 0.5*(drift_bar[i+3] + drift_0[i+3])*dt + bdW_0[i];
+    }
+  }
+
   calcTurbStatistics();
   calcTurbTimeScale();
 }
@@ -501,7 +570,6 @@ void TurbModel_WVM::diffCoeff(double (*diff)[3], double *eref, double *uref)
   C2 = sqrt(C1);
 
   double umag = sqrt(vecDotVec3d(uref,uref));
-
   diff[0][0] = C2*umag*(1.0 - eref[0]*eref[0]);
   diff[0][1] = C2*umag*(-eref[0]*eref[1]);
   diff[0][2] = C2*umag*(-eref[0]*eref[2]);
@@ -513,6 +581,30 @@ void TurbModel_WVM::diffCoeff(double (*diff)[3], double *eref, double *uref)
   diff[2][0] = C2*umag*(-eref[2]*eref[0]);
   diff[2][1] = C2*umag*(-eref[2]*eref[1]);
   diff[2][2] = C2*umag*(1.0 - eref[2]*eref[2]);
+
+/*  diff[0][0] = C2*sqrt(2.0*tke)*(1.0 - eref[0]*eref[0]);
+  diff[0][1] = C2*sqrt(2.0*tke)*(-eref[0]*eref[1]);
+  diff[0][2] = C2*sqrt(2.0*tke)*(-eref[0]*eref[2]);
+
+  diff[1][0] = C2*sqrt(2.0*tke)*(-eref[1]*eref[0]);
+  diff[1][1] = C2*sqrt(2.0*tke)*(1.0 - eref[1]*eref[1]);
+  diff[1][2] = C2*sqrt(2.0*tke)*(-eref[1]*eref[2]);
+
+  diff[2][0] = C2*sqrt(2.0*tke)*(-eref[2]*eref[0]);
+  diff[2][1] = C2*sqrt(2.0*tke)*(-eref[2]*eref[1]);
+  diff[2][2] = C2*sqrt(2.0*tke)*(1.0 - eref[2]*eref[2]);
+*/
+  /*diff[0][0] = 0.0;
+  diff[0][1] = 0.0;
+  diff[0][2] = 0.0;
+
+  diff[1][0] = 0.0;
+  diff[1][1] = 0.0;
+  diff[1][2] = 0.0;
+
+  diff[2][0] = 0.0;
+  diff[2][1] = 0.0;
+  diff[2][2] = 0.0;*/
 
 }
 
@@ -645,7 +737,17 @@ void TurbModel_WVM:: calcTurbStatistics()
     rey[i] = 0.0;
     dim[i] = 0.0;
   }
-
+  for (int i = 0; i < 3; i++)
+    for (int j = i; j < 3; j++)
+    {
+      e2[i][j] = 0.0;
+      for (int k = 0; k < 3; k++)
+	for (int l = k; l < 3; l++)
+	{
+	  M[i][j][k][l] = 0.0;
+	  e4[i][j][k][l] = 0.0;
+	}
+    }
   for (int ipar = 0; ipar < npar; ipar ++)
   {
     rey[0] += u[ipar][0]*u[ipar][0];
@@ -662,6 +764,18 @@ void TurbModel_WVM:: calcTurbStatistics()
     dim[3] += umag2*e[ipar][0]*e[ipar][1];
     dim[4] += umag2*e[ipar][0]*e[ipar][2];
     dim[5] += umag2*e[ipar][1]*e[ipar][2];
+
+    for (int i = 0; i < 3; i++)
+      for(int j = i; j <3; j++)
+      {
+	e2[i][j] += e[ipar][i]*e[ipar][j];
+	for (int k = 0; k< 3; k++)
+	  for (int l = k; l < 3; l++)
+	  {
+	    M[i][j][k][l] += u[ipar][i]*u[ipar][j]*e[ipar][k]*e[ipar][l];
+	    e4[i][j][k][l] += e[ipar][i]*e[ipar][j]*e[ipar][k]*e[ipar][l];
+	  }
+      }
   }
 
   for (int i = 0; i < 6; i++)
@@ -674,23 +788,97 @@ void TurbModel_WVM:: calcTurbStatistics()
 
   for (int i = 0; i < 3; i++) cir[i] = 2.0*tke - rey[i] - dim[i];
   for (int i = 3; i < 6; i++) cir[i] = -rey[i] - dim[i];
+
+  for (int i = 0; i < 3; i++)
+    for(int j = i; j <3; j++)
+    {
+      e2[i][j] /= (nshells*nmodes);
+      for (int k = 0; k< 3; k++)
+	for (int l = k;l < 3; l++)
+	{
+          M[i][j][k][l] /= (nshells*nmodes);
+	  e4[i][j][k][l] /= (nshells*nmodes);
+	}
+    }
+
+  for (int i = 0; i < 3; i++)
+    for (int j = i; j < 3; j++)
+    {
+      e2[i][j] = e2[j][i];
+
+      M[i][j][1][0] = M[i][j][0][1];
+      M[i][j][2][0] = M[i][j][0][2];
+      M[i][j][2][1] = M[i][j][1][2];
+
+      e4[i][j][1][0] = e4[i][j][0][1];
+      e4[i][j][2][0] = e4[i][j][0][2];
+      e4[i][j][2][1] = e4[i][j][1][2];
+    }
+
+  for (int k = 0; k < 3; k++)
+    for (int l = 0; l < 3; l++)
+    {
+      M[1][0][k][l] = M[0][1][k][l];
+      M[2][0][k][l] = M[0][2][k][l];
+      M[2][1][k][l] = M[1][2][k][l];
+
+      e4[1][0][k][l] = e4[0][1][k][l];
+      e4[2][0][k][l] = e4[0][2][k][l];
+      e4[2][1][k][l] = e4[1][2][k][l];
+    }
 }
 
-void TurbModel_WVM::calcReStress(double *struc, double &eps_main, 
+void TurbModel_WVM::calcReStress(double *struc, double &eps_main, double *prod,
+                                 double *rRedi, double *sRediEps, 
                                  double (*Gn)[3], double (*Gnph)[3], 
                                  double (*Gnp1)[3], double dt, char* tIntName)
 {  
   // time integration
   if      (strcmp(tIntName, "fwEuler") == 0)   fwEuler(dt, Gn);
   else if (strcmp(tIntName, "Heun") == 0)      Heun(dt, Gn);
+  else if (strcmp(tIntName, "semiHeun") == 0)  semiHeun(dt, Gn);
   else if (strcmp(tIntName, "rk4") == 0)       rk4(dt, Gn, Gnph, Gnp1);
   else    cout << "Not a valid time integration scheme" << endl;
   
-  // output to main
+  // structure tensors and eps to main
   for (int i = 0; i < 6; i++)
   {
     struc[i] = rey[i];
     struc[i+6] = dim[i];
   }
   eps_main = eps;
+
+  int index[3][3] = { {0, 3, 4}, {3, 1, 5}, {4, 5, 2} };
+  // production
+  for (int i = 0; i < 3; i++)
+    for (int j = i; j < 3; j++)
+      for (int k = 0; k < 3; k++)
+      {
+	prod[index[i][j]] = -rey[index[i][k]]*Gn[j][k] 
+                            -rey[index[j][k]]*Gn[i][k];
+      }
+
+  // rapid redistribution
+  for (int i = 0; i < 3; i++)
+    for (int j = i; j < 3; j++)
+    {
+      rRedi[index[i][j]] = 0.0;
+      for (int k = 0; k < 3; k++)
+	for (int l = 0; l < 3; l++)
+	  rRedi[index[i][j]] += 2.0*Gn[k][l]*(M[i][l][j][k] + M[j][l][i][k]);
+    }
+
+  // slow redistribution + dissipation
+  double RD[3][3] = { {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0} };
+  for (int i = 0; i < 3; i++)
+    for (int j = 0; j < 3; j++)
+      for (int k = 0; k < 3; k++)
+	RD[i][j] += rey[index[i][k]]*dim[index[k][j]];
+
+  for (int i = 0; i < 3; i++)
+    for (int j = i; j < 3; j++)
+    {
+      sRediEps[index[i][j]] = 0.0;      
+    }
+
 }

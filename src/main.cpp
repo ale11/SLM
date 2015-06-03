@@ -47,6 +47,11 @@ int main(int argc, char *argv[])
   double tke_init;    // initial turbulent kinetic energy
   double eps_ndim;    // dissipation of TKE (non-dimensionalized)
   double eps_init;    // initial dissipation of TKE
+  double Sstar;       // Shear parameter: Sq2/eps
+  double P_eps;       // Production over dissipation
+  double prod[6];     // Production of rij
+  double rRedi[6];    // Rapid redistribution of rij
+  double sRediEps[6]; // Slow redistribution + dissipation of rij
   
   double (*G)[3][3];  // velocity deformation tensor
   double (*it_Wi)[3]; // vorticity vec at each time step
@@ -183,9 +188,12 @@ int main(int argc, char *argv[])
       G[0][i][j] = Sij[i][j] + Wij[i][j];
   }
 
-  wvm->initialHookScalarRansTurbModel(Stau_init,struc,eps_init);
+  wvm->initialHookScalarRansTurbModel(Stau_init,struc,eps_init, prod, rRedi,
+                                      G[0]);
   tke_init = 0.5*(struc[0] + struc[1] + struc[2]);
   double q2 = 2.0*tke_init;
+  Sstar = S*q2/eps_init;
+  P_eps = -S*struc[3]/eps_init;
 
   fid = fopen(history, "w");
   if (fid == NULL)
@@ -196,14 +204,23 @@ int main(int argc, char *argv[])
   fprintf(fid,"Variables = \"st\" \"e_st\" \"rey0_2k\" \"rey1_2k\" ");
   fprintf(fid,"\"rey2_2k\" \"rey3_2k\" \"rey4_2k\" \"rey5_2k\" ");
   fprintf(fid,"\"dim0_2k\" \"dim1_2k\" \"dim2_2k\" \"dim3_2k\" \"dim4_2k\" ");
-  fprintf(fid,"\"dim5_2k\" \"tke\" \"eps\" \n");
+  fprintf(fid,"\"dim5_2k\" \"tke\" \"eps\" \"S*\" \"P/eps\" ");
+  fprintf(fid,"\"prod_0\" \"prod_1\" \"prod_2\" \"prod_3\" \"prod_4\" ");
+  fprintf(fid,"\"prod_5\" \"rredi_0\" \"rredi_1\" \"rredi_2\" \"rredi_3\" ");
+  fprintf(fid,"\"rredi_4\" \"rredi_5\" \n");
   fprintf(fid,"Zone T = \"%s\" F = point\n", model);
   fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t",
 	  st[0], exp(st[0]), struc[0]/q2, struc[1]/q2, struc[2]/q2, 
           struc[3]/q2, struc[4]/q2, struc[5]/q2);
-  fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\n",
+  fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t",
           struc[6]/q2, struc[7]/q2, struc[8]/q2, struc[9]/q2, struc[10]/q2, 
           struc[11]/q2, 1.0, 1.0);
+  fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t",
+	  Sstar, P_eps, prod[0]/(S*q2), prod[1]/(S*q2), prod[2]/(S*q2),
+	  prod[3]/(S*q2), prod[4]/(S*q2), prod[5]/(S*q2));
+  fprintf(fid, "%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\n",
+	  rRedi[0]/(S*q2), rRedi[1]/(S*q2), rRedi[2]/(S*q2),
+	  rRedi[3]/(S*q2), rRedi[4]/(S*q2), rRedi[5]/(S*q2));
 
   // Loop through time
   for (int n = 0; n < nt; n++) // 1 is replacing nt
@@ -296,9 +313,12 @@ int main(int argc, char *argv[])
     }
     
     // compute Reynolds stresses and TKE
-    wvm->calcReStress(struc, eps_ndim, G[2*n], G[2*n+1], G[2*n+2], dt, tIntName);
+    wvm->calcReStress(struc, eps_ndim, prod, rRedi, sRediEps, G[2*n], G[2*n+1], 
+                      G[2*n+2], dt, tIntName);
     tke_ndim = 0.5*(struc[0] + struc[1] + struc[2]);
     double q2 = 2.0*tke_ndim;
+    Sstar = S*q2/eps_ndim;
+    P_eps = -S*struc[3]/eps_ndim;
     tke_ndim /= tke_init;
     eps_ndim /= eps_init;
 
@@ -306,12 +326,18 @@ int main(int argc, char *argv[])
     fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t",
 	    st[n+1], exp(st[n+1]), struc[0]/q2, struc[1]/q2, struc[2]/q2,
 	    struc[3]/q2, struc[4]/q2, struc[5]/q2);
-    fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\n",
+    fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t",
 	    struc[6]/q2, struc[7]/q2, struc[8]/q2, struc[9]/q2, struc[10]/q2,
 	    struc[11]/q2, tke_ndim, eps_ndim);
+    fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t", 
+            Sstar, P_eps, prod[0]/(S*q2), prod[1]/(S*q2), prod[2]/(S*q2),
+            prod[3]/(S*q2), prod[4]/(S*q2), prod[5]/(S*q2));
+    fprintf(fid, "%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\n",
+	    rRedi[0]/(S*q2), rRedi[1]/(S*q2), rRedi[2]/(S*q2),
+            rRedi[3]/(S*q2), rRedi[4]/(S*q2), rRedi[5]/(S*q2));
 
     // Output iteration number
-    cout << "iter: " << st[n+1] << endl;
+    cout << "iter: " << setw(6) << st[n+1] << setw(12) << tke_ndim << endl;
   }
 
   fclose(fid);

@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <string.h>
 #include <ctime>
+#include <iomanip>
 #include "mathoper.hpp"
 using namespace std;
 
