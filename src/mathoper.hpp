@@ -77,4 +77,16 @@ inline void matTimesMat3d(double (*M1)[3], double (*M2)[3], double (*M3)[3])
     }
 }
 
+inline double traceMatTimesMat3d(double (*M1)[3], double (*M2)[3])
+{
+  double result = 0.0;
+
+  for (int i = 0; i < 3; i++)
+    for (int j = 0; j < 3; j++)
+      result += M1[i][j]*M2[j][i];
+  
+  return result;
+}
+
+	
 #endif

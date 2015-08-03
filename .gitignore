@@ -1,5 +1,13 @@
 *~
 
+RemoteSystemsTempFiles/.project
+
+src/.cproject
+
+src/.project
+
+.metadata/*
+
 *.o
 
 /bin

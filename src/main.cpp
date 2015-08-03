@@ -56,7 +56,7 @@ int main(int argc, char *argv[])
   double (*G)[3][3];  // velocity deformation tensor
   double (*it_Wi)[3]; // vorticity vec at each time step
 
-  TurbModel_WVM *wvm;
+  TurbModel_SLM *slm;
 
   enum def_types {axc, axe, ps, rs, seq, thd};
 
@@ -176,7 +176,7 @@ int main(int argc, char *argv[])
   st    = new double [nt+1];
   G     = new double [2*nt+1][3][3]; 
   it_Wi = new double [nt+1][3];    
-  wvm   = new TurbModel_WVM(model);
+  slm   = new TurbModel_IPRM();
 
   // Initial condition
   t = 0.0;
@@ -188,7 +188,7 @@ int main(int argc, char *argv[])
       G[0][i][j] = Sij[i][j] + Wij[i][j];
   }
 
-  wvm->initialHookScalarRansTurbModel(Stau_init,struc,eps_init, prod, rRedi,
+  slm->initialHookScalarRansTurbModel(Stau_init,struc,eps_init, prod, rRedi,
                                       G[0]);
   tke_init = 0.5*(struc[0] + struc[1] + struc[2]);
   double q2 = 2.0*tke_init;
@@ -222,7 +222,10 @@ int main(int argc, char *argv[])
 	  rRedi[0]/(S*q2), rRedi[1]/(S*q2), rRedi[2]/(S*q2),
 	  rRedi[3]/(S*q2), rRedi[4]/(S*q2), rRedi[5]/(S*q2));
 
+  //slm->writeData(st[0]);
+  // -----------------------------------------------------------------------------------------
   // Loop through time
+  // -----------------------------------------------------------------------------------------
   for (int n = 0; n < nt; n++) // 1 is replacing nt
   {
     // compute time
@@ -233,32 +236,32 @@ int main(int argc, char *argv[])
     switch (def)
     {
     case seq:
-      double W_temp;
+    	double W_temp;
       if ( (exp(st[n+1]) > 2.72) && (seq_axe) )
       {
-	if ( exp(st[n] + fabs(S)*0.5*dt) > 2.72 )
-	{
-	  ststar = S*(t - 0.5*dt);
-	  S = 1.0;
-	  Sij[0][0] = S;
-	  Sij[1][1] = -0.5*S;
-	  Sij[2][2] = -0.5*S;
+      	if ( exp(st[n] + fabs(S)*0.5*dt) > 2.72 )
+      	{
+      		ststar = S*(t - 0.5*dt);
+      		S = 1.0;
+      		Sij[0][0] = S;
+      		Sij[1][1] = -0.5*S;
+      		Sij[2][2] = -0.5*S;
 
-	  W_temp = W*exp(S*(t - 0.5*dt) + 2.0*ststar);
-	  Wij[1][2] = -0.5*W_temp;
-	  Wij[2][1] = 0.5*W_temp;
-	  matPlusMat3d(G[2*n+1], Sij, Wij);
+      		W_temp = W*exp(S*(t - 0.5*dt) + 2.0*ststar);
+      		Wij[1][2] = -0.5*W_temp;
+      		Wij[2][1] = 0.5*W_temp;
+      		matPlusMat3d(G[2*n+1], Sij, Wij);
 
-	  W_temp = W*exp(S*t + 2.0*ststar);
-	  Wij[1][2] = -0.5*W_temp;
-	  Wij[2][1] = 0.5*W_temp;
-	  WifromWij(Wi, Wij);
-	  matPlusMat3d(G[2*n+2], Sij, Wij);
-	}
-	else
-	{
-	  ststar = S*t;
-          S = 1.0;
+      		W_temp = W*exp(S*t + 2.0*ststar);
+      		Wij[1][2] = -0.5*W_temp;
+      		Wij[2][1] = 0.5*W_temp;
+      		WifromWij(Wi, Wij);
+      		matPlusMat3d(G[2*n+2], Sij, Wij);
+      	}
+      	else
+      	{
+      		ststar = S*t;
+      		S = 1.0;
           Sij[0][0] = S;
           Sij[1][1] = -0.5*S;
           Sij[2][2] = -0.5*S;
@@ -273,21 +276,21 @@ int main(int argc, char *argv[])
           Wij[2][1] = 0.5*W_temp;
           WifromWij(Wi, Wij);
           matPlusMat3d(G[2*n+2], Sij, Wij);
-	}
-	seq_axe = false;
+      	}
+      	seq_axe = false;
       }
       else 
       {
-	W_temp = W*exp(S*(t - 0.5*dt) + 2.0*ststar);
-	Wij[1][2] = -0.5*W_temp;
-	Wij[2][1] = 0.5*W_temp;
-	matPlusMat3d(G[2*n+1], Sij, Wij);
+      	W_temp = W*exp(S*(t - 0.5*dt) + 2.0*ststar);
+      	Wij[1][2] = -0.5*W_temp;
+      	Wij[2][1] = 0.5*W_temp;
+      	matPlusMat3d(G[2*n+1], Sij, Wij);
 
         W_temp = W*exp(S*t + 2.0*ststar);
         Wij[1][2] = -0.5*W_temp;
         Wij[2][1] = 0.5*W_temp;
-	WifromWij(Wi, Wij);
-	matPlusMat3d(G[2*n+2], Sij, Wij);
+        WifromWij(Wi, Wij);
+        matPlusMat3d(G[2*n+2], Sij, Wij);
       }
       break;
     case thd:
@@ -313,7 +316,7 @@ int main(int argc, char *argv[])
     }
     
     // compute Reynolds stresses and TKE
-    wvm->calcReStress(struc, eps_ndim, prod, rRedi, sRediEps, G[2*n], G[2*n+1], 
+    slm->calcReStress(struc, eps_ndim, prod, rRedi, sRediEps, G[2*n], G[2*n+1], 
                       G[2*n+2], dt, tIntName);
     tke_ndim = 0.5*(struc[0] + struc[1] + struc[2]);
     double q2 = 2.0*tke_ndim;
@@ -338,6 +341,9 @@ int main(int argc, char *argv[])
 
     // Output iteration number
     cout << "iter: " << setw(6) << st[n+1] << setw(12) << tke_ndim << endl;
+
+    // Write data
+    //if ( (n+1) % 200 == 0) slm->writeData(st[n+1]);
   }
 
   fclose(fid);
@@ -346,7 +352,7 @@ int main(int argc, char *argv[])
   delete [] st;
   delete [] G;
   delete [] it_Wi;
-  delete wvm;
+  delete slm;
 
   return (0);
 }
