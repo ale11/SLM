@@ -135,23 +135,25 @@ public:
 
   // Memeber functions
 public:
-  void initialHookScalarRansTurbModel(double Stau, double *struc,
-                                      double &eps_init, double *prod,
-                                      double *rapRedi, double (*Gn)[3]);
+  void initialHookScalarRansTurbModel(double Stau, double *struc, double &eps_init,
+  		                                double *prod, double *rapRedi, double (*Gn)[3]);
 
-  void calcReStress(double *struc, double &eps_main, double *prod,
-                    double *rRedi, double *sRediEps, double (*Gn)[3],
-                    double (*Gnph)[3], double (*Gnp1)[3], double dt,
-                    char* tIntName);
+  void calcReStress(double *struc, double &eps_main, double *prod, double *rRedi,
+  		              double *sRediEps, double (*Gn)[3], double (*Gnph)[3], double (*Gnp1)[3],
+  		              double dt, char* tIntName);
 
   void fwEuler(double dt, double (*Gn)[3]);
 
   void Heun(double dt, double (*Gn)[3]);
 
+  void CrankN(double dt, double (*Gn)[3]);
+
   void calcTurbStatistics();
 
-  virtual void driftCoeff(double *drift, double (*G)[3], double *eref,
-                          double *cref);
+  virtual void driftCoeff(double *eDrift, double *cDrift, double *eref, double *cref,
+  		                    double (*G)[3]);
+  virtual void driftJacob(double (*eDrift)[3], double (*cDrift)[6], double *eref,
+  		                    double *cref, double (*G)[3], double dt);
 
   virtual double rhsDissipation(double (*Gn)[3], double dt);
 

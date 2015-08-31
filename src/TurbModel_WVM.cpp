@@ -152,11 +152,11 @@ void TurbModel_PAR::initialHookScalarRansTurbModel(double Stau, double *struc,
     }
 
   // output to screen
-  cout << "Simulated TKE: " << tke << endl;
-  cout << "Exact TKE    : " << 0.25 << endl;
-  cout << "Eps          : " << eps << endl;
-  cout << "Tau          : " << tau << endl;
-  cout << "Sk/eps       : " << tke/eps << endl;
+  cout << "Simulated TKE : " << tke << endl;
+  cout << "Exact TKE     : " << 0.25 << endl;
+  cout << "Eps           : " << eps << endl;
+  cout << "Tau           : " << tau << endl;
+  cout << "Sk/eps        : " << tke/eps << endl;
   cout << "--------------------------------" << endl;
 }
 
@@ -184,10 +184,13 @@ void TurbModel_PAR::fwEuler(double dt, double (*Gn)[3])
       eipar[i] += drift[i]*dt + bdW[i];
       uipar[i] += drift[i+3]*dt + bdW[i+3];
     }
-    double small = 1.0e-1;
-    double e2 = vecDotVec3d(eipar, eipar);
-    if ((e2 < (1.0 - small)) || (e2 > (1.0 + small)))
-      cout << "Wrong e2: " << e2 << endl;
+
+    normVec3d(eipar);
+    VecOrthoVec3d(uipar,eipar);
+    //double small = 1.0e-1;
+    //double e2 = vecDotVec3d(eipar, eipar);
+    //if ((e2 < (1.0 - small)) || (e2 > (1.0 + small)))
+    //  cout << "Wrong e2: " << e2 << endl;
   }
 
   double eps_rhs = rhsDissipation(Gn, dt);
@@ -231,9 +234,11 @@ void TurbModel_PAR::semiHeun(double dt, double (*Gn)[3])
       evec[i] += 0.5*(drift_bar[i] + drift_0[i])*dt + bdW_0[i];
       uvec[i] += 0.5*(drift_bar[i+3] + drift_0[i+3])*dt + bdW_0[i+3];
     }
-    //normVec3d(evec); // forced renormalization
-    double small = 1.0e-1;
-    double e2 = vecDotVec3d(evec, evec);
+
+    normVec3d(evec);
+    VecOrthoVec3d(uvec,evec);
+    //double small = 1.0e-1;
+    //double e2 = vecDotVec3d(evec, evec);
     //if ((e2 < (1.0 - small)) || (e2 > (1.0 + small)))
     //  cout << "Wrong e2: " << e2 << endl;
     //double ue = vecDotVec3d(uvec, evec);
@@ -656,6 +661,8 @@ void TurbModel_PAR::calcReStress(double *struc, double &eps_main, double *prod,
 
 TurbModel_IPRM::TurbModel_IPRM() : TurbModel_PAR()
 {
+	cout << "Model         : IPRM" << endl;
+
   Cn = 2.2;
   Cv = 1.0; //1.5;
   Ceps1 = 1.5;
@@ -843,6 +850,8 @@ void TurbModel_IPRM::calcTurbTimeScale()
 
 TurbModel_LANG::TurbModel_LANG() : TurbModel_PAR()
 {
+	cout << "Model         : LANG" << endl;
+
   ae = 0.03;
   au = 2.1;
   gamma = 2.0;
@@ -1013,6 +1022,8 @@ double TurbModel_LANG::rhsDissipation(double(*Gn)[3], double dt)
 
 TurbModel_CLS::TurbModel_CLS(void) : TurbModel_SLM()
 {
+	cout << "Model         : CLS" << endl;
+
   nshells = 32;
   nmodes = 200;
   ncls = nshells*nmodes;
@@ -1132,11 +1143,11 @@ void TurbModel_CLS::initialHookScalarRansTurbModel(double Stau, double *struc,
     }
 
   // output to screen
-  cout << "Simulated TKE: " << tke << endl;
-  cout << "Exact TKE    : " << 0.25 << endl;
-  cout << "Eps          : " << eps << endl;
-  cout << "Tau          : " << tau << endl;
-  cout << "Sk/eps       : " << tke/eps << endl;
+  cout << "Simulated TKE : " << tke << endl;
+  cout << "Exact TKE     : " << 0.25 << endl;
+  cout << "Eps           : " << eps << endl;
+  cout << "Tau           : " << tau << endl;
+  cout << "Sk/eps        : " << tke/eps << endl;
   cout << "--------------------------------" << endl;
 }
 
@@ -1147,16 +1158,20 @@ void TurbModel_CLS::fwEuler(double dt, double (*Gn)[3])
     double *eicls = e[icls];
     double *cicls = c[icls];
 
-    double drift[9];
-    driftCoeff(drift, Gn, eicls, cicls);
+    double eDrift[3], cDrift[6];
 
-    for (int i = 0; i < 3; i++) eicls[i] += drift[i]*dt;
-    for (int i = 0; i < 6; i++) cicls[i] += drift[i+3]*dt;
+    driftCoeff(eDrift, cDrift, eicls, cicls, Gn);
 
-    double small = 1.0e-1;
-    double e2 = vecDotVec3d(eicls, eicls);
-    if ((e2 < (1.0 - small)) || (e2 > (1.0 + small)))
-      cout << "Wrong e2: " << e2 << endl;
+    for (int i = 0; i < 3; i++) eicls[i] += eDrift[i]*dt;
+    for (int i = 0; i < 6; i++) cicls[i] += cDrift[i]*dt;
+
+    normVec3d(eicls);
+    SymMatOrthoVec3d(cicls, eicls);
+
+    //double small = 1.0e-1;
+    //double e2 = vecDotVec3d(eicls, eicls);
+    //if ((e2 < (1.0 - small)) || (e2 > (1.0 + small)))
+    //  cout << "Wrong e2: " << e2 << endl;
   }
 
   double eps_rhs = rhsDissipation(Gn, dt);
@@ -1173,21 +1188,24 @@ void TurbModel_CLS::Heun(double dt, double (*Gn)[3])
     double *eicls = e[icls];
     double *cicls = c[icls];
 
-    double drift_0[9];
-    driftCoeff(drift_0, Gn, eicls, cicls);
+    double eDrift_n[3], cDrift_n[6], eDrift_np1[3], cDrift_np1[6];
+    double enp1[3], cnp1[6];
 
-    double ebar[3],cbar[6];
-    for (int i = 0; i < 3; i++) ebar[i] = eicls[i] + drift_0[i]*dt;
-    for (int i = 0; i < 6; i++) cbar[i] = cicls[i] + drift_0[i+3]*dt;
+    driftCoeff(eDrift_n, cDrift_n, eicls, cicls, Gn);
 
-    double drift_bar[9];
-    driftCoeff(drift_bar, Gn, ebar, cbar);
+    for (int i = 0; i < 3; i++) enp1[i] = eicls[i] + eDrift_n[i]*dt;
+    for (int i = 0; i < 6; i++) cnp1[i] = cicls[i] + cDrift_n[i]*dt;
 
-    for (int i = 0; i < 3; i++) eicls[i] += 0.5*(drift_bar[i] + drift_0[i])*dt;
-    for (int i = 0; i < 6; i++) cicls[i] += 0.5*(drift_bar[i+3] + drift_0[i+3])*dt;
+    driftCoeff(eDrift_np1, cDrift_np1, enp1, cnp1, Gn);
 
-    double small = 1.0e-1;
-    double e2 = vecDotVec3d(eicls, eicls);
+    for (int i = 0; i < 3; i++) eicls[i] += 0.5*(eDrift_np1[i] + eDrift_n[i])*dt;
+    for (int i = 0; i < 6; i++) cicls[i] += 0.5*(cDrift_np1[i] + cDrift_n[i])*dt;
+
+    normVec3d(eicls);
+    SymMatOrthoVec3d(cicls, eicls);
+
+    //double small = 1.0e-1;
+    //double e2 = vecDotVec3d(eicls, eicls);
     //if ((e2 < (1.0 - small)) || (e2 > (1.0 + small)))
     //  cout << "Wrong e2: " << e2 << endl;
   }
@@ -1199,11 +1217,43 @@ void TurbModel_CLS::Heun(double dt, double (*Gn)[3])
   calcTurbTimeScale();
 }
 
-void TurbModel_CLS::driftCoeff(double *drift, double (*G)[3], double *eref,
-                               double *cref)
+void TurbModel_CLS::CrankN(double dt, double (*Gn)[3])
 {
-  for (int i = 0; i < 9; i++)
-    drift[i] = 0.0;
+  for (int icls = 0; icls < ncls; icls++)
+  {
+    double *eicls = e[icls];
+    double *cicls = c[icls];
+
+    double de[3], dc[6], Ae[3][3], Ac[6][6];
+
+    // right and left hand side
+    driftCoeff(de, dc, eicls, cicls, Gn);
+    driftJacob(Ae, Ac, eicls, cicls, Gn, dt);
+
+    // solve linear systems
+    GaussSolver(3, Ae[0], de);
+    GaussSolver(6, Ac[0], dc);
+
+    // update solutions
+    for (int i = 0; i < 3; i++) eicls[i] += de[i];
+    for (int i = 0; i < 6; i++) cicls[i] += dc[i];
+
+    normVec3d(eicls);
+    SymMatOrthoVec3d(cicls, eicls);
+  }
+
+  double eps_rhs = rhsDissipation(Gn, dt);
+  eps += dt*eps_rhs;
+
+  calcTurbStatistics();
+  calcTurbTimeScale();
+}
+
+void TurbModel_CLS::driftCoeff(double *eDrift, double *cDrift, double *eref, double *cref,
+		                           double (*G)[3])
+{
+  for (int i = 0; i < 3; i++) eDrift[i] = 0.0;
+  for (int i = 0; i < 6; i++) cDrift[i] = 0.0;
 
   double psi[3][3];
   psi[0][0] = cref[0];   psi[0][1] = cref[3];   psi[0][2] = cref[4];
@@ -1231,13 +1281,13 @@ void TurbModel_CLS::driftCoeff(double *drift, double (*G)[3], double *eref,
   	}
 
   for (int i = 0; i < 3; i++)
-    drift[i] = -Ge[i] + eGe*eref[i];
+    eDrift[i] = -Ge[i] + eGe*eref[i];
 
   for (int n = 0; n < 6; n++)
 	{
 	  int i = iIndex[n];
 	  int j = jIndex[n];
-    drift[n+3] = -Gpsi[i][j] - Gpsi[j][i] + 2.0*eGpsie1[i][j] + 2.0*eGpsie1[j][i];
+    cDrift[n] = -Gpsi[i][j] - Gpsi[j][i] + 2.0*eGpsie1[i][j] + 2.0*eGpsie1[j][i];
 	}
 
   // expanded gradient
@@ -1279,14 +1329,14 @@ void TurbModel_CLS::driftCoeff(double *drift, double (*G)[3], double *eref,
   	}
 
   for (int i = 0; i < 3; i++)
-    drift[i] += -Ge[i] + eGe*eref[i];
+    eDrift[i] += -Ge[i] + eGe*eref[i];
 
   for (int n = 0; n < 6; n++)
 	{
 	  int i = iIndex[n];
 	  int j = jIndex[n];
-    drift[n+3] += -Gpsi[i][j] - Gpsi[j][i] + eGpsie1[i][j] + eGpsie1[j][i]
-                                           + eGpsie2[i][j] + eGpsie2[j][i];
+    cDrift[n] += -Gpsi[i][j] - Gpsi[j][i] + eGpsie1[i][j] + eGpsie1[j][i]
+                                          + eGpsie2[i][j] + eGpsie2[j][i];
 	}
 
   // slow rotational randomization
@@ -1308,12 +1358,157 @@ void TurbModel_CLS::driftCoeff(double *drift, double (*G)[3], double *eref,
 
   double psikk = cref[0] + cref[1] + cref[2];
 
-  drift[3] -= 2.0*C1*cref[0] - C1*psikk + C1*psikk*eref[0]*eref[0];
-  drift[4] -= 2.0*C1*cref[1] - C1*psikk + C1*psikk*eref[1]*eref[1];
-  drift[5] -= 2.0*C1*cref[2] - C1*psikk + C1*psikk*eref[2]*eref[2];
-  drift[6] -= 2.0*C1*cref[3] + C1*psikk*eref[0]*eref[1];
-  drift[7] -= 2.0*C1*cref[4] + C1*psikk*eref[0]*eref[2];
-  drift[8] -= 2.0*C1*cref[5] + C1*psikk*eref[1]*eref[2];
+  cDrift[0] -= 2.0*C1*cref[0] - C1*psikk + C1*psikk*eref[0]*eref[0];
+  cDrift[1] -= 2.0*C1*cref[1] - C1*psikk + C1*psikk*eref[1]*eref[1];
+  cDrift[2] -= 2.0*C1*cref[2] - C1*psikk + C1*psikk*eref[2]*eref[2];
+  cDrift[3] -= 2.0*C1*cref[3] + C1*psikk*eref[0]*eref[1];
+  cDrift[4] -= 2.0*C1*cref[4] + C1*psikk*eref[0]*eref[2];
+  cDrift[5] -= 2.0*C1*cref[5] + C1*psikk*eref[1]*eref[2];
+}
+
+void TurbModel_CLS::driftJacob(double (*eDrift)[3], double (*cDrift)[6], double *eref,
+		                           double *cref, double (*G)[3], double dt)
+{
+  int iIndex[6] = {0, 1, 2, 0, 0, 1};
+  int jIndex[6] = {0, 1, 2, 1, 2, 2};
+	double delta[3][3] = { {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0} };
+
+	// -----------------------------------------------------------------------------------------
+	// expanded gradients
+	// -----------------------------------------------------------------------------------------
+  double r[3][3], d[3][3], rd[3][3];
+  double q2 = 2.0*tke;
+  double Gn[3][3], Gv[3][3];
+
+  r[0][0] = rey[0]/q2;   r[0][1] = rey[3]/q2;   r[0][2] = rey[4]/q2;
+  r[1][0] = rey[3]/q2;   r[1][1] = rey[1]/q2;   r[1][2] = rey[5]/q2;
+  r[2][0] = rey[4]/q2;   r[2][1] = rey[5]/q2;   r[2][2] = rey[2]/q2;
+
+  d[0][0] = dim[0]/q2;   d[0][1] = dim[3]/q2;   d[0][2] = dim[4]/q2;
+  d[1][0] = dim[3]/q2;   d[1][1] = dim[1]/q2;   d[1][2] = dim[5]/q2;
+  d[2][0] = dim[4]/q2;   d[2][1] = dim[5]/q2;   d[2][2] = dim[2]/q2;
+
+  matTimesMat3d(rd, r, d);
+
+  for (int i = 0; i < 3; i++)
+  	for (int j = 0; j < 3; j++)
+  	{
+  		Gn[i][j] = G[i][j] + Cn/tau*rd[i][j];
+  		Gv[i][j] = G[i][j] + Cv/tau*rd[i][j];
+  	}
+
+	// -----------------------------------------------------------------------------------------
+  // slow rotational randomization
+	// -----------------------------------------------------------------------------------------
+  double f[3][3];
+  f[0][0] = cir[0]/q2;   f[0][1] = cir[3]/q2;   f[0][2] = cir[4]/q2;
+  f[1][0] = cir[3]/q2;   f[1][1] = cir[1]/q2;   f[1][2] = cir[5]/q2;
+  f[2][0] = cir[4]/q2;   f[2][1] = cir[5]/q2;   f[2][2] = cir[2]/q2;
+
+  double fnn = vecDotMatDotVec3d(eref, eref, f);
+
+  double Ovec[3], Omag, C1;
+  Ovec[0] = rd[2][1] - rd[1][2];
+  Ovec[1] = rd[0][2] - rd[2][0];
+  Ovec[2] = rd[1][0] - rd[0][1];
+
+  Omag = sqrt(vecDotVec3d(Ovec,Ovec));
+
+  C1 = 8.5/tau*Omag*fnn;
+
+	// -----------------------------------------------------------------------------------------
+	// Form Jacobian for wave vector drift
+	// -----------------------------------------------------------------------------------------
+	double Gn_e[3], e_Gn[3], e_Gv[3], e_Gn_e = 0.0;
+	for (int i = 0; i < 3; i++)
+	{
+		Gn_e[i] = 0.0;
+		e_Gn[i] = 0.0;
+		e_Gv[i] = 0.0;
+		for (int j = 0; j < 3; j++)
+		{
+			Gn_e[i] += Gn[i][j]*eref[j];
+			e_Gn[i] += eref[j]*Gn[j][i];
+			e_Gv[i] += eref[j]*Gv[j][i];
+		}
+		e_Gn_e += eref[i]*Gn_e[i];
+	}
+
+	for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
+			eDrift[i][j] = delta[i][j]/dt
+			             - 0.5*(-Gn[j][i] + Gn_e[j]*eref[i] + e_Gn[j]*eref[i] + delta[i][j]*e_Gn_e);
+
+	// -----------------------------------------------------------------------------------------
+	// Form Jacobian for cluster drift
+	// -----------------------------------------------------------------------------------------
+	// expanded gradient
+	double b[3];
+	for (int i = 0; i < 3; i++)
+		b[i] = e_Gn[i] + e_Gv[i];
+
+  cDrift[0][0] = 2.0*Gv[0][0] - 2.0*b[0]*eref[0];
+  cDrift[0][1] = 0.0;
+  cDrift[0][2] = 0.0;
+  cDrift[0][3] = 2.0*Gv[0][1] - 2.0*b[1]*eref[0];
+  cDrift[0][4] = 2.0*Gv[0][2] - 2.0*b[2]*eref[0];
+  cDrift[0][5] = 0.0;
+
+  cDrift[1][0] = 0.0;
+  cDrift[1][1] = 2.0*Gv[1][1] - 2.0*b[1]*eref[1];
+  cDrift[1][2] = 0.0;
+  cDrift[1][3] = 2.0*Gv[1][0] - 2.0*b[0]*eref[1];
+  cDrift[1][4] = 0.0;
+  cDrift[1][5] = 2.0*Gv[1][2] - 2.0*b[2]*eref[1];
+
+  cDrift[2][0] = 0.0;
+  cDrift[2][1] = 0.0;
+  cDrift[2][2] = 2.0*Gv[2][2] - 2.0*b[2]*eref[2];
+  cDrift[2][3] = 0.0;
+  cDrift[2][4] = 2.0*Gv[2][0] - 2.0*b[0]*eref[2];
+  cDrift[2][5] = 2.0*Gv[2][1] - 2.0*b[1]*eref[2];
+
+  cDrift[3][0] = Gv[1][0] - b[0]*eref[1];
+  cDrift[3][1] = Gv[0][1] - b[1]*eref[0];
+  cDrift[3][2] = 0.0;
+  cDrift[3][3] = Gv[0][0] - b[0]*eref[0] + Gv[1][1] - b[1]*eref[1];
+  cDrift[3][4] = Gv[1][2] - b[2]*eref[1];
+  cDrift[3][5] = Gv[0][2] - b[2]*eref[0];
+
+  cDrift[4][0] = Gv[2][0] - b[0]*eref[2];
+  cDrift[4][1] = 0.0;
+  cDrift[4][2] = Gv[0][2] - b[2]*eref[0];
+  cDrift[4][3] = Gv[2][1] - b[1]*eref[2];
+  cDrift[4][4] = Gv[0][0] - b[0]*eref[0] + Gv[2][2] - b[2]*eref[2];
+  cDrift[4][5] = Gv[0][1] - b[1]*eref[0];
+
+  cDrift[5][0] = 0.0;
+  cDrift[5][1] = Gv[2][1] - b[1]*eref[2];
+  cDrift[5][2] = Gv[1][2] - b[2]*eref[1];
+  cDrift[5][3] = Gv[2][0] - b[0]*eref[2];
+  cDrift[5][4] = Gv[1][0] - b[0]*eref[1];
+  cDrift[5][5] = Gv[1][1] - b[1]*eref[1] + Gv[2][2] - b[2]*eref[2];
+
+  // slow rotational randomization model
+  for (int n = 0; n < 6; n++)
+  {
+  	cDrift[n][n] -= 2.0*C1;
+  	for (int m = 0; m < 3; m++)
+  	{
+  		int i = iIndex[n];
+  		int j = jIndex[n];
+  		cDrift[n][m] += C1*(delta[i][j] - eref[i]*eref[j]);
+  	}
+  }
+
+  // form jacobian
+  for (int n = 0; n < 6; n++)
+  	for (int m = 0; m < 6; m++)
+  		cDrift[n][m] *= -0.5;
+
+  for (int n = 0; n < 6; n++)
+  	cDrift[n][n] += 1.0/dt;
+
 }
 
 double TurbModel_CLS::rhsDissipation(double(*Gn)[3], double dt)
@@ -1460,8 +1655,9 @@ void TurbModel_CLS::calcReStress(double *struc, double &eps_main, double *prod,
                                  double (*Gnp1)[3], double dt, char* tIntName)
 {
   // time integration
-  if      (strcmp(tIntName, "fwEuler") == 0)   fwEuler(dt, Gn);
-  else if (strcmp(tIntName, "Heun") == 0)      Heun(dt, Gn);
+  if      (strcmp(tIntName, "fwEuler") == 0) fwEuler(dt, Gn);
+  else if (strcmp(tIntName, "Heun") == 0)    Heun(dt, Gn);
+  else if (strcmp(tIntName, "CrankN") == 0)  CrankN(dt, Gn);
   else    cout << "Not a valid time integration scheme" << endl;
 
   // structure tensors and eps to main

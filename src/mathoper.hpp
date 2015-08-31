@@ -88,5 +88,102 @@ inline double traceMatTimesMat3d(double (*M1)[3], double (*M2)[3])
   return result;
 }
 
-	
+inline void GaussSolver( const int n, double *M, double *v)
+{
+	// form lower triangular system
+	if (n > 1)
+	{
+		for (int col = (n-1); col > 0; col--)
+		{
+			// check for singular matrix
+			if ( M[col*n+col] != 0.0 )
+			{
+				for ( int row = 0; row < col; row++)
+				{
+					double ratio = M[row*n+col]/M[col*n+col];
+					// update vector
+					v[row] -= ratio*v[col];
+					// update matrix
+					for (int i = 0; i < col; i++)
+						M[row*n+i] -= ratio*M[col*n+i];
+				}
+			}
+			else std::cout << "Singular matrix" << std::endl;
+		}
+	}
+
+	// compute the back solution
+	if ( M[0] != 0 )
+	{
+		v[0] /= M[0];
+		if (n > 1)
+		{
+			for ( int row = 1; row < n; row++)
+			{
+				double result = v[row];
+				for ( int col = 0; col < row; col++)
+					result -= M[row*n+col]*v[col];
+				v[row] = result/M[row*n+row];
+			}
+		}
+	}
+	else std::cout << "Singular matrix" << std::endl;
+}
+
+inline void VecOrthoVec3d( double *v1, const double * v2)
+{
+  double v1Dotv2 = vecDotVec3d(v1, v2);
+  for (int i = 0; i < 3; i++)
+  	v1[i] = v1[i] - v1Dotv2*v2[i];
+}
+
+inline void SymMatOrthoVec3d( double M[6], const double *v)
+{
+	double A[3][3], b[3];
+
+	A[0][0] = 1.0 + v[0]*v[0];   A[0][1] =     + v[0]*v[1];   A[0][2] =     + v[0]*v[2];
+	A[1][0] =     + v[1]*v[0];   A[1][1] = 1.0 + v[1]*v[1];   A[1][2] =     + v[1]*v[2];
+	A[2][0] =     + v[2]*v[0];   A[2][1] =     + v[2]*v[1];   A[2][2] = 1.0 + v[2]*v[2];
+
+	b[0] = M[0]*v[0] + M[3]*v[1] + M[4]*v[2];
+	b[1] = M[3]*v[0] + M[1]*v[1] + M[5]*v[2];
+	b[2] = M[4]*v[0] + M[5]*v[1] + M[2]*v[2];
+
+	GaussSolver(3, A[0], b);
+
+	M[0] -= b[0]*v[0] + b[0]*v[0];
+	M[1] -= b[1]*v[1] + b[1]*v[1];
+	M[2] -= b[2]*v[2] + b[2]*v[2];
+	M[3] -= b[0]*v[1] + b[1]*v[0];
+	M[4] -= b[0]*v[2] + b[2]*v[0];
+	M[5] -= b[1]*v[2] + b[2]*v[1];
+}
+
+/*// TO TEST THE GAUSS SOLVER
+double dc[6], Ac[6][6];
+Ac[0][0] = 4.0;  Ac[0][1] = 2.0;  Ac[0][2] = 1.0;
+Ac[0][3] = 4.0;  Ac[0][4] = 5.0;  Ac[0][5] = 6.0;
+
+Ac[1][0] = 8.0;  Ac[1][1] = 3.0;  Ac[1][2] = 10.0;
+Ac[1][3] = 11.0; Ac[1][4] = 12.0; Ac[1][5] = 13.0;
+
+Ac[2][0] = 14.0; Ac[2][1] = 7.0; Ac[2][2] = 16.0;
+Ac[2][3] = 17.0; Ac[2][4] = 18.0; Ac[2][5] = 19.0;
+
+Ac[3][0] = 13.0; Ac[3][1] = 11.0; Ac[3][2] = 2.0;
+Ac[3][3] = 6.0; Ac[3][4] = 4.0; Ac[3][5] = 5.0;
+
+Ac[4][0] = 2.0; Ac[4][1] = 7.0; Ac[4][2] = 4.0;
+Ac[4][3] = 9.0; Ac[4][4] = 0.0; Ac[4][5] = 1.0;
+
+Ac[5][0] = 3.0; Ac[5][1] = 4.0; Ac[5][2] = 5.0;
+Ac[5][3] = 5.0; Ac[5][4] = 2.0; Ac[5][5] = 9.0;
+
+dc[0] = 5.0; dc[1] = 8.0; dc[2] = 4.0; dc[3] = 3.0; dc[4] = 2.0; dc[5] = 1.0;
+
+GaussSolver(6, Ac[0], dc);
+
+cout << dc[0] << ", " << dc[1] << ", " << dc[2] << ", " << dc[3] << ", "
+     << dc[4] << ", " << dc[5] << endl;*/
+
 #endif

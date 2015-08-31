@@ -86,14 +86,11 @@ int main(int argc, char *argv[])
   fclose(fid);
 
   cout << "--------------------------------" << endl;
-  cout << "Particle model: " << model << endl;
   cout << "Deformation   : " << def_name << endl;
   cout << "Time integ.   : " << tIntName << endl;
   cout << "nt            : " << nt << endl;
   cout << "dt            : " << dt << endl;
   cout << "W/S           : " << WoverS << endl;
-  cout << "Initial Stau  : " << Stau_init << endl;
-  cout << "--------------------------------" << endl;
 
   if (strcmp(def_name, "axc") == 0)
     def = axc;
@@ -175,8 +172,11 @@ int main(int argc, char *argv[])
   // Data allocation
   st    = new double [nt+1];
   G     = new double [2*nt+1][3][3]; 
-  it_Wi = new double [nt+1][3];    
-  slm   = new TurbModel_IPRM();
+  it_Wi = new double [nt+1][3];
+  if (strcmp(model, "iprm") == 0)      slm = new TurbModel_IPRM;
+  else if (strcmp(model, "lang") == 0) slm = new TurbModel_LANG;
+  else if (strcmp(model, "cls") == 0)  slm = new TurbModel_CLS;
+  else cout << "Model " << model << " not available." << endl;
 
   // Initial condition
   t = 0.0;
