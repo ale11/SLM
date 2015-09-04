@@ -2,6 +2,7 @@
 #define MATHOPER_H
 
 #include <math.h>
+#include <armadillo>
 
 inline double vecDotVec3d(const double *v1, const double *v2) {
 
@@ -91,40 +92,34 @@ inline double traceMatTimesMat3d(double (*M1)[3], double (*M2)[3])
 inline void GaussSolver( const int n, double *M, double *v)
 {
 	// form lower triangular system
-	if (n > 1)
+	for (int col = (n-1); col > 0; col--)
 	{
-		for (int col = (n-1); col > 0; col--)
+		// check for singular matrix
+		if ( M[col*n+col] != 0.0 )
 		{
-			// check for singular matrix
-			if ( M[col*n+col] != 0.0 )
+			for ( int row = 0; row < col; row++)
 			{
-				for ( int row = 0; row < col; row++)
-				{
-					double ratio = M[row*n+col]/M[col*n+col];
-					// update vector
-					v[row] -= ratio*v[col];
-					// update matrix
-					for (int i = 0; i < col; i++)
-						M[row*n+i] -= ratio*M[col*n+i];
-				}
+				double ratio = M[row*n+col]/M[col*n+col];
+				// update vector
+				v[row] -= ratio*v[col];
+				// update matrix
+				for (int i = 0; i < col; i++)
+					M[row*n+i] -= ratio*M[col*n+i];
 			}
-			else std::cout << "Singular matrix" << std::endl;
 		}
+		else std::cout << "Singular matrix" << std::endl;
 	}
 
 	// compute the back solution
 	if ( M[0] != 0 )
 	{
 		v[0] /= M[0];
-		if (n > 1)
+		for ( int row = 1; row < n; row++)
 		{
-			for ( int row = 1; row < n; row++)
-			{
-				double result = v[row];
-				for ( int col = 0; col < row; col++)
-					result -= M[row*n+col]*v[col];
-				v[row] = result/M[row*n+row];
-			}
+			double result = v[row];
+			for ( int col = 0; col < row; col++)
+				result -= M[row*n+col]*v[col];
+			v[row] = result/M[row*n+row];
 		}
 	}
 	else std::cout << "Singular matrix" << std::endl;
@@ -157,6 +152,55 @@ inline void SymMatOrthoVec3d( double M[6], const double *v)
 	M[3] -= b[0]*v[1] + b[1]*v[0];
 	M[4] -= b[0]*v[2] + b[2]*v[0];
 	M[5] -= b[1]*v[2] + b[2]*v[1];
+}
+
+inline void CholeskyDecomp(const int n, double *A, double *L)
+{
+	for (int i = 0; i < n; i++)
+		for (int j = 0; j < (i+1); j++)
+		{
+			double s = 0;
+			for (int k = 0; k < j; k++)
+				s += L[i * n + k] * L[j * n + k];
+
+			L[i * n + j] = (i == j) ?
+					sqrt(A[i * n + i] - s) : (1.0 / L[j * n + j] * (A[i * n + j] - s));
+		}
+}
+
+inline void CholeskySolver(const int n, double *M, double *v)
+{
+	double *L = new double [n*n];
+	CholeskyDecomp(n,M,L);
+
+	// compute back solution
+	if ( L[0] != 0 )
+	{
+		v[0] /= L[0];
+		for ( int row = 1; row < n; row++)
+		{
+			double result = v[row];
+			for ( int col = 0; col < row; col++)
+				result -= L[row*n+col]*v[col];
+			v[row] = result/L[row*n+row];
+		}
+	}
+	else std::cout << "Singular matrix" << std::endl;
+
+	// compute forward solution
+	if ( L[0] != 0 )
+	{
+		v[n-1] /= L[n*n-1];
+		for ( int row = n-2; row >= 0; row--)
+		{
+			double result = v[row];
+			for ( int col = (n-1); col > row; col--)
+				result -= L[col*n+row]*v[col];
+			v[row] = result/L[row*n+row];
+		}
+	}
+	else std::cout << "Singular matrix" << std::endl;
+
 }
 
 /*// TO TEST THE GAUSS SOLVER

@@ -11,7 +11,6 @@ void evolutionWi(double *Wi, double *Wihat, double St);
 
 int main(int argc, char *argv[])
 {
-
   // Parameters & variables
   int nt;               // number of time steps
   int def;              // type of deformation
@@ -176,6 +175,7 @@ int main(int argc, char *argv[])
   if (strcmp(model, "iprm") == 0)      slm = new TurbModel_IPRM;
   else if (strcmp(model, "lang") == 0) slm = new TurbModel_LANG;
   else if (strcmp(model, "cls") == 0)  slm = new TurbModel_CLS;
+  else if (strcmp(model, "eul") == 0)  slm = new TurbModel_EUL;
   else cout << "Model " << model << " not available." << endl;
 
   // Initial condition
@@ -222,11 +222,11 @@ int main(int argc, char *argv[])
 	  rRedi[0]/(S*q2), rRedi[1]/(S*q2), rRedi[2]/(S*q2),
 	  rRedi[3]/(S*q2), rRedi[4]/(S*q2), rRedi[5]/(S*q2));
 
-  //slm->writeData(st[0]);
+  slm->writeData(st[0]);
   // -----------------------------------------------------------------------------------------
   // Loop through time
   // -----------------------------------------------------------------------------------------
-  for (int n = 0; n < nt; n++) // 1 is replacing nt
+  for (int n = 0; n < nt; n++)
   {
     // compute time
     t += dt;
@@ -343,10 +343,12 @@ int main(int argc, char *argv[])
     cout << "iter: " << setw(6) << st[n+1] << setw(12) << tke_ndim << endl;
 
     // Write data
-    //if ( (n+1) % 200 == 0) slm->writeData(st[n+1]);
+    if ( (n+1) % 20 == 0) slm->writeData(st[n+1]);
   }
 
   fclose(fid);
+
+  slm->writeData(st[nt]);
 
   // Cleanup
   delete [] st;
