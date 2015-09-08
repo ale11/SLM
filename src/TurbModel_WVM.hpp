@@ -175,15 +175,20 @@ public:
 public:
   int nnodes;         // number of nodes for RBFs
   int nelems;         // number of triangulated elements
-  double (*grid)[3];  // contains grid points for RBFs
   int (*elem)[3];     // contains connectivity for triangulated elements
+
+  double epsilon;
+  double (*grid)[3];  // contains grid points for RBFs
   double *lambda;
   double *theta;
-  mat coeff; // coefficients of RBF expansions
-  mat B;
+
+  mat Ainv;
+  mat U, V;
+  cube J, K, H;
+  mat Lam;
 
   double eps, tau;
-  double M[3][3][3][3], e2[3][3], e4[3][3][3][3];
+  double M[3][3][3][3], e4[3][3][3][3];
 
   double Cn, Cv, Ceps1, Ceps2, Ceps3;
 
@@ -203,6 +208,8 @@ public:
   void CrankN(double dt, double (*Gn)[3]);
 
   void RK4(double dt, double (*Gn)[3]);
+
+  virtual void calcRhs(mat &rhs, mat &var, double (*G)[3], double dt);
 
   void calcTurbStatistics();
 
