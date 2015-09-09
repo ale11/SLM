@@ -210,7 +210,7 @@ int main(int argc, char *argv[])
   fprintf(fid,"\"rredi_4\" \"rredi_5\" \n");
   fprintf(fid,"Zone T = \"%s\" F = point\n", model);
   fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t",
-	  st[0], exp(st[0]), struc[0]/q2, struc[1]/q2, struc[2]/q2, 
+	  st[0], exp(st[0]), struc[0]/q2, struc[1]/q2, struc[2]/q2,
           struc[3]/q2, struc[4]/q2, struc[5]/q2);
   fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t",
           struc[6]/q2, struc[7]/q2, struc[8]/q2, struc[9]/q2, struc[10]/q2, 
@@ -343,7 +343,7 @@ int main(int argc, char *argv[])
     cout << "iter: " << setw(6) << st[n+1] << setw(12) << tke_ndim << endl;
 
     // Write data
-    if ( (n+1) % 20 == 0) slm->writeData(st[n+1]);
+    if ( (n+1) % 100 == 0) slm->writeData(st[n+1]);
   }
 
   fclose(fid);
