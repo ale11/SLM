@@ -226,6 +226,7 @@ int main(int argc, char *argv[])
   // -----------------------------------------------------------------------------------------
   // Loop through time
   // -----------------------------------------------------------------------------------------
+  clock_t startTime = clock();
   for (int n = 0; n < nt; n++)
   {
     // compute time
@@ -345,6 +346,8 @@ int main(int argc, char *argv[])
     // Write data
     if ( (n+1) % 100 == 0) slm->writeData(st[n+1]);
   }
+  double endTime = (double)(clock() - startTime)/CLOCKS_PER_SEC;
+  cout << "Time elapsed: " << endTime << " seconds." << endl;
 
   fclose(fid);
 

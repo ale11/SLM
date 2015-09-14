@@ -184,7 +184,7 @@ public:
 
   mat Ainv;
   mat U, V;
-  cube J, K, H;
+  cube J, K, H, W;
   mat Lam;
 
   double eps, tau;

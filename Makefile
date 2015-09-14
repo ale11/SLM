@@ -1,5 +1,9 @@
 # Main Makefile
 
+export LIBS = -L/usr/local/lib -larmadillo -framework Accelerate
+export INCS = -I/usr/local/include
+export FLAGS= -O2
+
 RTDIR = $(shell pwd)
 
 export CPP = g++
