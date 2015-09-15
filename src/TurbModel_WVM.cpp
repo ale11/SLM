@@ -1312,7 +1312,7 @@ void TurbModel_CLS::driftCoeff(double *eDrift, double *cDrift, double *eref, dou
 	}
 
   // expanded gradient
-  /*double r[3][3], d[3][3], rd[3][3];
+  double r[3][3], d[3][3], rd[3][3];
   double q2 = 2.0*tke;
   double Gn[3][3], Gv[3][3];
 
@@ -1378,13 +1378,12 @@ void TurbModel_CLS::driftCoeff(double *eDrift, double *cDrift, double *eref, dou
   C1 = 8.5/tau*Omag*fnn;
 
   double psikk = cref[0] + cref[1] + cref[2];
-
   cDrift[0] -= 2.0*C1*cref[0] - C1*psikk + C1*psikk*eref[0]*eref[0];
   cDrift[1] -= 2.0*C1*cref[1] - C1*psikk + C1*psikk*eref[1]*eref[1];
   cDrift[2] -= 2.0*C1*cref[2] - C1*psikk + C1*psikk*eref[2]*eref[2];
   cDrift[3] -= 2.0*C1*cref[3] + C1*psikk*eref[0]*eref[1];
   cDrift[4] -= 2.0*C1*cref[4] + C1*psikk*eref[0]*eref[2];
-  cDrift[5] -= 2.0*C1*cref[5] + C1*psikk*eref[1]*eref[2]; */
+  cDrift[5] -= 2.0*C1*cref[5] + C1*psikk*eref[1]*eref[2];
 }
 
 void TurbModel_CLS::driftJacob(double (*eDrift)[3], double (*cDrift)[6], double *eref,
@@ -1748,11 +1747,12 @@ TurbModel_EUL::~TurbModel_EUL()
 	delete [] elem;
 	delete [] lambda;
 	delete [] theta;
+	delete [] C1;
 }
 
 void TurbModel_EUL::initialHookScalarRansTurbModel(double Stau, double *struc,
 			                                             double &eps_init, double *prod,
-                                                   double *rRedi, double (*Gn)[3])
+                                                   double *rRedi, double (*G)[3])
 {
   tke = 0.25;
 
@@ -1779,6 +1779,7 @@ void TurbModel_EUL::initialHookScalarRansTurbModel(double Stau, double *struc,
   elem   = new int [nelems][3];
   lambda = new double [nnodes];
   theta  = new double [nnodes];
+  C1     = new double [nnodes];
 
 	Ainv.set_size(nnodes,nnodes);
 	U.set_size(nnodes,nnodes);
@@ -1901,9 +1902,8 @@ void TurbModel_EUL::initialHookScalarRansTurbModel(double Stau, double *struc,
 				W(inode,jnode,5) = Ainv(inode,jnode)*H(jnode,1,2);
 		}
 
-  calcTurbStatistics();
+  calcOutputs();
   eps = tke/Stau;
-  calcTurbTimeScale();
 
   // output to main
   for (int i = 0; i < 6; i++)
@@ -1919,7 +1919,7 @@ void TurbModel_EUL::initialHookScalarRansTurbModel(double Stau, double *struc,
     for (int j = i; j < 3; j++)
       for (int k = 0; k < 3; k++)
       {
-      	prod[index[i][j]] = -rey[index[i][k]]*Gn[j][k] - rey[index[j][k]]*Gn[i][k];
+      	prod[index[i][j]] = -rey[index[i][k]]*G[j][k] - rey[index[j][k]]*G[i][k];
       }
 
   // rapid redistribution
@@ -1929,132 +1929,147 @@ void TurbModel_EUL::initialHookScalarRansTurbModel(double Stau, double *struc,
       rRedi[index[i][j]] = 0.0;
       for (int k = 0; k < 3; k++)
       	for (int l = 0; l < 3; l++)
-      		rRedi[index[i][j]] += 2.0*Gn[k][l]*(M[i][l][j][k] + M[j][l][i][k]);
+      		rRedi[index[i][j]] += 2.0*G[k][l]*(M[i][l][j][k] + M[j][l][i][k]);
     }
 
   // output to screen
   cout << "Simulated TKE : " << tke << endl;
   cout << "Exact TKE     : " << 0.25 << endl;
   cout << "Eps           : " << eps << endl;
-  cout << "Tau           : " << tau << endl;
   cout << "Sk/eps        : " << tke/eps << endl;
   cout << "--------------------------------" << endl;
 }
 
-void TurbModel_EUL::fwEuler(double dt, double (*Gn)[3])
+void TurbModel_EUL::fwEuler(double dt, double (*G)[3])
 {
 	mat rhs(nnodes,6);
-	calcRhs(rhs, Lam, Gn, dt);
+
+  calcInputs(G);
+
+	calcRhs(rhs, Lam, dt);
 	Lam += rhs;
 
-	calcTurbStatistics();
+  double eps_rhs = rhsDissipation(G, dt);
+  eps += dt*eps_rhs;
+
+	calcOutputs();
 }
 
-void TurbModel_EUL::Heun(double dt, double (*Gn)[3])
+void TurbModel_EUL::Heun(double dt, double (*G)[3])
 {
 
 }
 
-void TurbModel_EUL::CrankN(double dt, double (*Gn)[3])
+void TurbModel_EUL::CrankN(double dt, double (*G)[3])
 {
 
 }
 
-void TurbModel_EUL::RK4(double dt, double (*Gn)[3])
+void TurbModel_EUL::RK4(double dt, double (*G)[3])
 {
 	mat rhs1(nnodes,6), rhs2(nnodes,6), rhs3(nnodes,6), rhs4(nnodes,6);
 	mat var(nnodes,6);
 
+  calcInputs(G);
+
 	var = Lam;
-	calcRhs(rhs1, var, Gn, dt);
+	calcRhs(rhs1, var, dt);
 
 	var = Lam + 0.5*rhs1;
-	calcRhs(rhs2, var, Gn, dt);
+	calcRhs(rhs2, var, dt);
 
 	var = Lam + 0.5*rhs2;
-	calcRhs(rhs3, var, Gn, dt);
+	calcRhs(rhs3, var, dt);
 
 	var = Lam + rhs3;
-	calcRhs(rhs4, var, Gn, dt);
+	calcRhs(rhs4, var, dt);
 
 	Lam += 1.0/6.0*(rhs1 + 2.0*rhs2 + 2.0*rhs3 + rhs4);
 
-	calcTurbStatistics();
+  double eps_rhs = rhsDissipation(G, dt);
+  eps += dt*eps_rhs;
+
+	calcOutputs();
 }
 
-void TurbModel_EUL::calcRhs(mat &rhs, mat &var, double (*G)[3], double dt)
+void TurbModel_EUL::calcRhs(mat &rhs, mat &var, double dt)
 {
-	double GJ, GK, GH, Gt[3][3], GtH[3][3], GGtH[3][3];
-	double L1[6], L2[6], L3[6];
-
 	mat conv1;  conv1 = U*var;
 	mat conv2;  conv2 = V*var;
 
 	int index[3][3] = { {0, 3, 4}, {3, 1, 5}, {4, 5, 2} };
   int iIndex[6] = {0, 1, 2, 0, 0, 1};
   int jIndex[6] = {0, 1, 2, 1, 2, 2};
+  double delta[3][3] = { {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0} };
 
-	// expanded gradients
+	// gradients
+  double Gnkk = Gn[0][0] + Gn[1][1] + Gn[2][2];
+  double Gt[3][3];
 	for (int i = 0; i < 3; i++)
 		for (int j = 0; j < 3; j++)
-			Gt[i][j] = 2.0*G[i][j];
+			Gt[i][j] = Gn[i][j] + Gv[i][j];
 
+	// loop through nodes
 	for (int inode = 0; inode < nnodes; inode++)
 	{
 		// coefficients
-		GJ = 0.0;
-		GK = 0.0;
-		GH = 0.0;
+		double GJ = 0.0, GK = 0.0, GH = 0.0;
+		double GtH[3][3];
 
 		for (int q = 0; q < 3; q++)
 			for (int r = 0; r < 3; r++)
 			{
-				GJ += G[q][r]*J(inode,q,r);
-				GK += G[q][r]*K(inode,q,r);
-				GH += G[q][r]*H(inode,q,r);
+				GJ += Gn[q][r]*J(inode,q,r);
+				GK += Gn[q][r]*K(inode,q,r);
+				GH += Gn[q][r]*H(inode,q,r);
 
 				GtH[q][r] = 0.0;
 				for (int p = 0; p < 3; p++)
 					GtH[q][r] += Gt[p][q]*H(inode,p,r);
 			}
 
+		double GGtH[3][3];
 		for (int i = 0; i < 3; i++)
 			for (int j = 0; j < 3; j++)
-				GGtH[i][j] = -G[i][j] + GtH[j][i];
+				GGtH[i][j] = -Gv[i][j] + GtH[j][i];
 
+		double L1[6], L2[6], L3[6];
 		for (int n = 0; n < 6; n++)
 		{
+			int i = iIndex[n];
+			int j = jIndex[n];
+
 			// convection
 			conv1(inode,n) *= GJ;
 			conv2(inode,n) *= GK;
 
 			// sources (L1)
-			L1[n] = -3.0*GH*var(inode,n);
+			L1[n] = (Gnkk - 3.0*GH - 2.0*C1[inode])*var(inode,n);
 
 			// sources (L2)
-			int i = iIndex[n];
-			int j = jIndex[n];
 			L2[n] = 0.0;
-
 			for (int s = 0; s < 3; s++)
 				L2[n] += GGtH[j][s]*var(inode,index[i][s]) + GGtH[i][s]*var(inode,index[j][s]);
 
+			// sources (L3)
+			L3[n] = C1[inode]*(delta[i][j] - H(inode,i,j))*(var(inode,0) + var(inode,1) + var(inode,2));
+
 			// right hand side
-			rhs(inode,n) = (conv1(inode,n) + conv2(inode,n) + L1[n] + L2[n])*dt;
+			rhs(inode,n) = (conv1(inode,n) + conv2(inode,n) + L1[n] + L2[n] + L3[n])*dt;
 		}
 	}
 }
 
-double TurbModel_EUL::rhsDissipation(double(*Gn)[3], double dt)
+double TurbModel_EUL::rhsDissipation(double(*G)[3], double dt)
 {
-  double prod = -rey[0]*Gn[0][0] - rey[3]*Gn[0][1] - rey[4]*Gn[0][2]
-                -rey[3]*Gn[1][0] - rey[1]*Gn[1][1] - rey[5]*Gn[1][2]
-                -rey[4]*Gn[2][0] - rey[5]*Gn[2][1] - rey[2]*Gn[2][2];
+  double prod = -rey[0]*G[0][0] - rey[3]*G[0][1] - rey[4]*G[0][2]
+                -rey[3]*G[1][0] - rey[1]*G[1][1] - rey[5]*G[1][2]
+                -rey[4]*G[2][0] - rey[5]*G[2][1] - rey[2]*G[2][2];
 
   double vort[3];
-  vort[0] = Gn[2][1] - Gn[1][2];
-  vort[1] = Gn[0][2] - Gn[2][0];
-  vort[2] = Gn[1][0] - Gn[0][1];
+  vort[0] = G[2][1] - G[1][2];
+  vort[1] = G[0][2] - G[2][0];
+  vort[2] = G[1][0] - G[0][1];
 
   double d[3][3];
   double q2 = 2.0*tke;
@@ -2069,9 +2084,9 @@ double TurbModel_EUL::rhsDissipation(double(*Gn)[3], double dt)
   return rhs;
 }
 
-void TurbModel_EUL::calcTurbTimeScale()
+void TurbModel_EUL::calcInputs(double(*G)[3])
 {
-  double r[3][3], d[3][3], rd[3][3];
+  double r[3][3], d[3][3], f[3][3], rd[3][3];
   double q2 = 2.0*tke;
 
   r[0][0] = rey[0]/q2;   r[0][1] = rey[3]/q2;   r[0][2] = rey[4]/q2;
@@ -2082,15 +2097,42 @@ void TurbModel_EUL::calcTurbTimeScale()
   d[1][0] = dim[3]/q2;   d[1][1] = dim[1]/q2;   d[1][2] = dim[5]/q2;
   d[2][0] = dim[4]/q2;   d[2][1] = dim[5]/q2;   d[2][2] = dim[2]/q2;
 
+  f[0][0] = cir[0]/q2;   f[0][1] = cir[3]/q2;   f[0][2] = cir[4]/q2;
+  f[1][0] = cir[3]/q2;   f[1][1] = cir[1]/q2;   f[1][2] = cir[5]/q2;
+  f[2][0] = cir[4]/q2;   f[2][1] = cir[5]/q2;   f[2][2] = cir[2]/q2;
+
   matTimesMat3d(rd, r, d);
   tau = 0.0;
   for (int i = 0; i < 3; i++)
     for (int j = 0; j < 3; j++)
       tau += rd[i][j]*r[j][i];
   tau *= 2.0*Cv*tke/eps;
+
+  for (int i = 0; i < 3; i++)
+  	for (int j = 0; j < 3; j++)
+  	{
+  		Gn[i][j] = G[i][j] + Cn/tau*rd[i][j];
+  		Gv[i][j] = G[i][j] + Cv/tau*rd[i][j];
+  	}
+
+  double Ovec[3], Omag;
+  Ovec[0] = rd[2][1] - rd[1][2];
+  Ovec[1] = rd[0][2] - rd[2][0];
+  Ovec[2] = rd[1][0] - rd[0][1];
+
+  Omag = sqrt(vecDotVec3d(Ovec,Ovec));
+
+  for (int inode = 0; inode < nnodes; inode++)
+  {
+  	double fnn = 0.0;
+  	for (int i = 0; i < 3; i++)
+  		for (int j = 0; j < 3; j++)
+  			fnn += f[i][j]*H(inode,i,j);
+  	C1[inode] = 8.5/tau*Omag*fnn;
+  }
 }
 
-void TurbModel_EUL:: calcTurbStatistics()
+void TurbModel_EUL:: calcOutputs()
 {
 	int index[3][3] = { {0, 3, 4}, {3, 1, 5}, {4, 5, 2} };
 
@@ -2179,14 +2221,14 @@ void TurbModel_EUL::writeData(double St)
 
 void TurbModel_EUL::calcReStress(double *struc, double &eps_main, double *prod,
                                  double *rRedi, double *sRediEps,
-                                 double (*Gn)[3], double (*Gnph)[3],
-                                 double (*Gnp1)[3], double dt, char* tIntName)
+                                 double (*G)[3], double (*Gph)[3],
+                                 double (*Gp1)[3], double dt, char* tIntName)
 {
   // time integration
-  if      (strcmp(tIntName, "fwEuler") == 0) fwEuler(dt, Gn);
-  else if (strcmp(tIntName, "Heun") == 0)    Heun(dt, Gn);
-  else if (strcmp(tIntName, "CrankN") == 0)  CrankN(dt, Gn);
-  else if (strcmp(tIntName, "RK4") == 0)     RK4(dt, Gn);
+  if      (strcmp(tIntName, "fwEuler") == 0) fwEuler(dt, G);
+  else if (strcmp(tIntName, "Heun") == 0)    Heun(dt, G);
+  else if (strcmp(tIntName, "CrankN") == 0)  CrankN(dt, G);
+  else if (strcmp(tIntName, "RK4") == 0)     RK4(dt, G);
   else    cout << "Not a valid time integration scheme" << endl;
 
   // structure tensors and eps to main
@@ -2203,7 +2245,7 @@ void TurbModel_EUL::calcReStress(double *struc, double &eps_main, double *prod,
     for (int j = i; j < 3; j++)
       for (int k = 0; k < 3; k++)
       {
-      	prod[index[i][j]] = -rey[index[i][k]]*Gn[j][k] - rey[index[j][k]]*Gn[i][k];
+      	prod[index[i][j]] = -rey[index[i][k]]*G[j][k] - rey[index[j][k]]*G[i][k];
       }
 
   // rapid redistribution
@@ -2213,7 +2255,7 @@ void TurbModel_EUL::calcReStress(double *struc, double &eps_main, double *prod,
     	rRedi[index[i][j]] = 0.0;
     	for (int k = 0; k < 3; k++)
     		for (int l = 0; l < 3; l++)
-    			rRedi[index[i][j]] += 2.0*Gn[k][l]*(M[i][l][j][k] + M[j][l][i][k]);
+    			rRedi[index[i][j]] += 2.0*G[k][l]*(M[i][l][j][k] + M[j][l][i][k]);
     }
 
   // slow redistribution + dissipation

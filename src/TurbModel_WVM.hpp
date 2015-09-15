@@ -187,35 +187,36 @@ public:
   cube J, K, H, W;
   mat Lam;
 
-  double eps, tau;
+  double Gn[3][3], Gv[3][3], eps, tau;
   double M[3][3][3][3], e4[3][3][3][3];
 
+  double *C1;
   double Cn, Cv, Ceps1, Ceps2, Ceps3;
 
   // Memeber functions
 public:
   void initialHookScalarRansTurbModel(double Stau, double *struc, double &eps_init,
-  		                                double *prod, double *rapRedi, double (*Gn)[3]);
+  		                                double *prod, double *rapRedi, double (*G)[3]);
 
   void calcReStress(double *struc, double &eps_main, double *prod, double *rRedi,
-  		              double *sRediEps, double (*Gn)[3], double (*Gnph)[3], double (*Gnp1)[3],
+  		              double *sRediEps, double (*G)[3], double (*Gph)[3], double (*Gp1)[3],
   		              double dt, char* tIntName);
 
-  void fwEuler(double dt, double (*Gn)[3]);
+  void fwEuler(double dt, double (*G)[3]);
 
-  void Heun(double dt, double (*Gn)[3]);
+  void Heun(double dt, double (*G)[3]);
 
-  void CrankN(double dt, double (*Gn)[3]);
+  void CrankN(double dt, double (*G)[3]);
 
-  void RK4(double dt, double (*Gn)[3]);
+  void RK4(double dt, double (*G)[3]);
 
-  virtual void calcRhs(mat &rhs, mat &var, double (*G)[3], double dt);
+  virtual void calcRhs(mat &rhs, mat &var, double dt);
 
-  void calcTurbStatistics();
+  virtual void calcInputs(double (*G)[3]);
 
-  virtual double rhsDissipation(double (*Gn)[3], double dt);
+  virtual void calcOutputs();
 
-  virtual void calcTurbTimeScale();
+  virtual double rhsDissipation(double (*G)[3], double dt);
 
   void writeData(double St);
 

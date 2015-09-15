@@ -213,7 +213,7 @@ int main(int argc, char *argv[])
 	  st[0], exp(st[0]), struc[0]/q2, struc[1]/q2, struc[2]/q2,
           struc[3]/q2, struc[4]/q2, struc[5]/q2);
   fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t",
-          struc[6]/q2, struc[7]/q2, struc[8]/q2, struc[9]/q2, struc[10]/q2, 
+          struc[6]/q2, struc[7]/q2, struc[8]/q2, struc[9]/q2, struc[10]/q2,
           struc[11]/q2, 1.0, 1.0);
   fprintf(fid,"%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t%.8e\t",
 	  Sstar, P_eps, prod[0]/(S*q2), prod[1]/(S*q2), prod[2]/(S*q2),
