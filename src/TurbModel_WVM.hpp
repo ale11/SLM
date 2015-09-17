@@ -130,8 +130,10 @@ public:
 
   double (*e)[3];
   double (*c)[6];
+  mat var;
 
-  double eps, tau;
+  double Gn[3][3], Gv[3][3], C1[3][3];
+  double eps;
   double M[3][3][3][3], e2[3][3], e4[3][3][3][3];
 
   double Cn, Cv, Ceps1, Ceps2, Ceps3;
@@ -151,16 +153,18 @@ public:
 
   void CrankN(double dt, double (*Gn)[3]);
 
-  void calcTurbStatistics();
+  virtual void calcRhs(mat &rhs, mat &var, double dt);
 
-  virtual void driftCoeff(double *eDrift, double *cDrift, double *eref, double *cref,
-  		                    double (*G)[3]);
-  virtual void driftJacob(double (*eDrift)[3], double (*cDrift)[6], double *eref,
-  		                    double *cref, double (*G)[3], double dt);
+  virtual void calcRhsJacob(double (*eDrift)[3], double (*cDrift)[6], double *eref,
+  		                  double *cref, double (*G)[3], double dt);
 
-  virtual double rhsDissipation(double (*Gn)[3], double dt);
+  virtual void correction();
 
-  virtual void calcTurbTimeScale();
+  virtual void inputs(double (*G)[3]);
+
+  virtual void outputs();
+
+  virtual double calcRhsEps(double (*Gn)[3], double dt);
 
 };
 
@@ -185,12 +189,13 @@ public:
   mat Ainv;
   mat U, V;
   cube J, K, H, W;
-  mat Lam;
+  mat var;
 
-  double Gn[3][3], Gv[3][3], eps, tau;
-  double M[3][3][3][3], e4[3][3][3][3];
+  double Gn[3][3], Gv[3][3], C1[3][3];
+  double eps;
 
-  double *C1;
+  double M[3][3][3][3], e2[3][3], e4[3][3][3][3];
+
   double Cn, Cv, Ceps1, Ceps2, Ceps3;
 
   // Memeber functions
@@ -212,11 +217,11 @@ public:
 
   virtual void calcRhs(mat &rhs, mat &var, double dt);
 
-  virtual void calcInputs(double (*G)[3]);
+  virtual void inputs(double (*G)[3]);
 
-  virtual void calcOutputs();
+  virtual void outputs();
 
-  virtual double rhsDissipation(double (*G)[3], double dt);
+  virtual double calcRhsEps(double (*G)[3], double dt);
 
   void writeData(double St);
 
