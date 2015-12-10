@@ -11,8 +11,11 @@ void evolutionWi(double *Wi, double *Wihat, double St);
 
 int main(int argc, char *argv[])
 {
+	gsl_set_error_handler_off();
+
   // Parameters & variables
   int nt;               // number of time steps
+  int dfree;             // degrees of freedom (particles, clusters, nodes)
   int def;              // type of deformation
   int ierr;             // error flag for reading inputs
 
@@ -70,13 +73,14 @@ int main(int argc, char *argv[])
   ierr = 0;
   ierr += fscanf(fid,"%s = %s", buffer, model);
   ierr += fscanf(fid,"%s = %s", buffer, def_name);
+  ierr += fscanf(fid,"%s = %d", buffer, &dfree);
   ierr += fscanf(fid,"%s = %d", buffer, &nt);
   ierr += fscanf(fid,"%s = %lf", buffer, &dt);
   ierr += fscanf(fid,"%s = %lf", buffer, &WoverS);
   ierr += fscanf(fid,"%s = %lf", buffer, &Stau_init);
   ierr += fscanf(fid,"%s = %s", buffer, tIntName);
 
-  if (ierr !=14)
+  if (ierr !=16)
   {
     cout << "Could not read all of the inputs" << endl;
     return 0;
@@ -172,10 +176,11 @@ int main(int argc, char *argv[])
   st    = new double [nt+1];
   G     = new double [2*nt+1][3][3]; 
   it_Wi = new double [nt+1][3];
-  if (strcmp(model, "iprm") == 0)      slm = new TurbModel_IPRM;
-  else if (strcmp(model, "lang") == 0) slm = new TurbModel_LANG;
-  else if (strcmp(model, "cls") == 0)  slm = new TurbModel_CLS;
-  else if (strcmp(model, "eul") == 0)  slm = new TurbModel_EUL;
+  if (strcmp(model, "par") == 0)       slm = new TurbModel_IPRM(dfree);
+  else if (strcmp(model, "lang") == 0)  slm = new TurbModel_LANG(dfree);
+  else if (strcmp(model, "cls") == 0)   slm = new TurbModel_CLS(dfree);
+  else if (strcmp(model, "rbf") == 0)   slm = new TurbModel_RBF;
+  else if (strcmp(model, "rbfqr") == 0) slm = new TurbModel_RBFQR;
   else cout << "Model " << model << " not available." << endl;
 
   // Initial condition
@@ -344,7 +349,7 @@ int main(int argc, char *argv[])
     cout << "iter: " << setw(6) << st[n+1] << setw(12) << tke_ndim << endl;
 
     // Write data
-    if ( (n+1) % 100 == 0) slm->writeData(st[n+1]);
+    if ( (n+1) % 1000 == 0) slm->writeData(st[n+1]);
   }
   double endTime = (double)(clock() - startTime)/CLOCKS_PER_SEC;
   cout << "Time elapsed: " << endTime << " seconds." << endl;

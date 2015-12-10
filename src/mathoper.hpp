@@ -3,6 +3,27 @@
 
 #include <math.h>
 #include <armadillo>
+#include <gsl/gsl_errno.h>
+#include <gsl/gsl_sf_bessel.h>
+#include <gsl/gsl_sf_legendre.h>
+
+template <typename T> int sgn(T val) {
+    return (T(0) < val) - (val < T(0));
+}
+
+inline unsigned int factorial(unsigned int n)
+{
+	if (n == 0)
+		return 1;
+	return n*factorial(n - 1);
+}
+
+inline unsigned int factorial2(unsigned int n)
+{
+	if ((n == 0) || (n == -1))
+		return 1;
+	return n*factorial2(n - 2);
+}
 
 inline double vecDotVec3d(const double *v1, const double *v2) {
 

@@ -1,6 +1,6 @@
 # Main Makefile
 
-export LIBS = -L/usr/local/lib -larmadillo -framework Accelerate
+export LIBS = -L/usr/local/lib -larmadillo -framework Accelerate -lgsl -lgslcblas -lm
 export INCS = -I/usr/local/include
 export FLAGS= -O2
 

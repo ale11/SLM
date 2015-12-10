@@ -25,10 +25,10 @@ void TurbModel_SLM::writeData(double St) {};
 #
 ############################################################################################*/
 
-TurbModel_PAR::TurbModel_PAR(void) : TurbModel_SLM()
+TurbModel_PAR::TurbModel_PAR(int dfree) : TurbModel_SLM()
 {
   nshells = 32;
-  nmodes = 2000;
+  nmodes = dfree/nshells;
   npar = nshells*nmodes;
 
   e = new double[npar][3];
@@ -49,7 +49,7 @@ void TurbModel_PAR::initialHookScalarRansTurbModel(double Stau, double *struc,
                                                    double *rRedi, 
                                                    double (*Gn)[3])
 {
-  srand(time(NULL));
+  //srand(time(NULL));
   for (int i = 0; i < 6; i++)
   {
     rey[i] = 0.0;
@@ -152,6 +152,7 @@ void TurbModel_PAR::initialHookScalarRansTurbModel(double Stau, double *struc,
     }
 
   // output to screen
+  cout << "Degrees of f. : " << npar << endl;
   cout << "Simulated TKE : " << tke << endl;
   cout << "Exact TKE     : " << 0.25 << endl;
   cout << "Eps           : " << eps << endl;
@@ -233,6 +234,78 @@ void TurbModel_PAR::semiHeun(double dt, double (*Gn)[3])
     {
       evec[i] += 0.5*(drift_bar[i] + drift_0[i])*dt + bdW_0[i];
       uvec[i] += 0.5*(drift_bar[i+3] + drift_0[i+3])*dt + bdW_0[i+3];
+    }
+
+    normVec3d(evec);
+    VecOrthoVec3d(uvec,evec);
+    //double small = 1.0e-1;
+    //double e2 = vecDotVec3d(evec, evec);
+    //if ((e2 < (1.0 - small)) || (e2 > (1.0 + small)))
+    //  cout << "Wrong e2: " << e2 << endl;
+    //double ue = vecDotVec3d(uvec, evec);
+    //if ( fabs(ue) > small)
+    //	cout << "No ortho: " << ue << endl;
+  }
+
+  double eps_rhs = rhsDissipation(Gn, dt);
+  eps += dt*eps_rhs;
+
+  calcTurbStatistics();
+  calcTurbTimeScale();
+}
+
+void TurbModel_PAR::semiRK4(double dt, double (*Gn)[3])
+{
+  for (int ipar = 0; ipar < npar; ipar++)
+  {
+    double *evec = e[ipar];
+    double *uvec = u[ipar];
+
+    double ebar[3], ubar[3];
+
+    double drift_1[6], diff[6][6];
+    driftCoeff(drift_1, Gn, evec, uvec);
+    diffCoeff(diff, evec, uvec);
+
+    double dW_0, bdW_0[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    for (int i = 0; i < 6; i++)
+    {
+      dW_0 = distribution(generator)*sqrt(dt);
+      for (int j = 0; j < 6; j++)
+        bdW_0[j] += diff[j][i]*dW_0;
+    }
+
+    double drift_2[6];
+    for (int i = 0; i < 3; i++)
+    {
+      ebar[i] = evec[i] + 0.5*drift_1[i]*dt + bdW_0[i];
+      ubar[i] = uvec[i] + 0.5*drift_1[i+3]*dt + bdW_0[i+3];
+    }
+
+    driftCoeff(drift_2, Gn, ebar, ubar);
+
+    double drift_3[6];
+    for (int i = 0; i < 3; i++)
+    {
+      ebar[i] = evec[i] + 0.5*drift_2[i]*dt + bdW_0[i];
+      ubar[i] = uvec[i] + 0.5*drift_2[i+3]*dt + bdW_0[i+3];
+    }
+
+    driftCoeff(drift_3, Gn, ebar, ubar);
+
+    double drift_4[6];
+    for (int i = 0; i < 3; i++)
+    {
+      ebar[i] = evec[i] + drift_3[i]*dt + bdW_0[i];
+      ubar[i] = uvec[i] + drift_3[i+3]*dt + bdW_0[i+3];
+    }
+
+    driftCoeff(drift_4, Gn, ebar, ubar);
+
+    for (int i = 0; i < 3; i++)
+    {
+      evec[i] += 1.0/6.0*(drift_1[i] + 2.0*drift_2[i] + 2.0*drift_3[i] + drift_4[i])*dt + bdW_0[i];
+      uvec[i] += 1.0/6.0*(drift_1[i+3] + 2.0*drift_2[i+3] + 2.0*drift_3[i+3] + drift_4[i+3])*dt + bdW_0[i+3];
     }
 
     normVec3d(evec);
@@ -608,6 +681,7 @@ void TurbModel_PAR::calcReStress(double *struc, double &eps_main, double *prod,
   if      (strcmp(tIntName, "fwEuler") == 0)   fwEuler(dt, Gn);
   else if (strcmp(tIntName, "Heun") == 0)      Heun(dt, Gn);
   else if (strcmp(tIntName, "semiHeun") == 0)  semiHeun(dt, Gn);
+  else if (strcmp(tIntName, "RK4") == 0)       semiRK4(dt, Gn);
   else    cout << "Not a valid time integration scheme" << endl;
   
   // structure tensors and eps to main
@@ -659,7 +733,7 @@ void TurbModel_PAR::calcReStress(double *struc, double &eps_main, double *prod,
 #
 ##############################################################################*/
 
-TurbModel_IPRM::TurbModel_IPRM() : TurbModel_PAR()
+TurbModel_IPRM::TurbModel_IPRM(int dfree) : TurbModel_PAR(dfree)
 {
 	cout << "Model         : IPRM" << endl;
 
@@ -848,7 +922,7 @@ void TurbModel_IPRM::calcTurbTimeScale()
 #
 ##############################################################################*/
 
-TurbModel_LANG::TurbModel_LANG() : TurbModel_PAR()
+TurbModel_LANG::TurbModel_LANG(int dfree) : TurbModel_PAR(dfree)
 {
 	cout << "Model         : LANG" << endl;
 
@@ -1020,16 +1094,13 @@ double TurbModel_LANG::rhsDissipation(double(*Gn)[3], double dt)
 #
 ############################################################################################*/
 
-TurbModel_CLS::TurbModel_CLS(void) : TurbModel_SLM()
+TurbModel_CLS::TurbModel_CLS(int dfree) : TurbModel_SLM()
 {
 	cout << "Model         : CLS" << endl;
 
   nshells = 32;
-  nmodes = 1000; //200;
+  nmodes = dfree/nshells;
   ncls = nshells*nmodes;
-
-  e = new double[ncls][3];
-  c = new double[ncls][6];
 
   Cn = 2.2;
   Cv = 1.0;
@@ -1040,17 +1111,17 @@ TurbModel_CLS::TurbModel_CLS(void) : TurbModel_SLM()
 
 TurbModel_CLS::~TurbModel_CLS()
 {
-  delete[] e;
-  delete[] c;
+
 }
 
 void TurbModel_CLS::initialHookScalarRansTurbModel(double Stau, double *struc,
 			                                       double &eps_init, double *prod,
                                                    double *rRedi, double (*Gn)[3])
 {
-  srand(time(NULL));
+  //srand(time(NULL));
   tke = 0.25;
   var.set_size(ncls,9);
+	Dhat.set_size(ncls*9,ncls*9);
 
   // Energy spectrum
   double mag_k[nshells], dk[nshells], Enukdk[nshells];
@@ -1158,6 +1229,7 @@ void TurbModel_CLS::initialHookScalarRansTurbModel(double Stau, double *struc,
     }
 
   // output to screen
+  cout << "Degrees of f. : " << ncls << endl;
   cout << "Simulated TKE : " << tke << endl;
   cout << "Exact TKE     : " << 0.25 << endl;
   cout << "Eps           : " << eps << endl;
@@ -1195,6 +1267,34 @@ void TurbModel_CLS::Heun(double dt, double (*G)[3])
 	calcRhs(rhs2, ivar, dt);
 
 	var += 0.5*(rhs1 + rhs2);
+
+  double eps_rhs = calcRhsEps(G, dt);
+  eps += dt*eps_rhs;
+
+  correction();
+	outputs();
+}
+
+void TurbModel_CLS::RK4(double dt, double (*G)[3])
+{
+	mat rhs1(ncls,9), rhs2(ncls,9), rhs3(ncls,9), rhs4(ncls,9);
+	mat ivar(ncls,9);
+
+  inputs(G);
+
+	ivar = var;
+	calcRhs(rhs1, ivar, dt);
+
+	ivar = var + 0.5*rhs1;
+	calcRhs(rhs2, ivar, dt);
+
+	ivar = var + 0.5*rhs2;
+	calcRhs(rhs3, ivar, dt);
+
+	ivar = var + rhs3;
+	calcRhs(rhs4, ivar, dt);
+
+	var += 1.0/6.0*(rhs1 + 2.0*rhs2 + 2.0*rhs3 + rhs4);
 
   double eps_rhs = calcRhsEps(G, dt);
   eps += dt*eps_rhs;
@@ -1252,9 +1352,7 @@ void TurbModel_CLS::calcRhs(mat &rhs, mat &var, double dt)
 		cref[1][0] = var(icls,6);   cref[1][1] = var(icls,4);   cref[1][2] = var(icls,8);
 		cref[2][0] = var(icls,7);   cref[2][1] = var(icls,8);   cref[2][2] = var(icls,5);
 
-		double Ge[3];
-		double eGe;
-		double Gc[3][3], eGce1[3][3], eGce2[3][3];
+		double Ge[3], eGe, Gc[3][3], eGce1[3][3], eGce2[3][3];
 
 		matTransDotVec3d(Ge, eref, Gn);
 		eGe = vecDotMatDotVec3d(eref, eref, Gn);
@@ -1272,9 +1370,11 @@ void TurbModel_CLS::calcRhs(mat &rhs, mat &var, double dt)
 					}
 			}
 
+		// wave vectors
 		for (int i = 0; i < 3; i++)
 			rhs(icls,i) += -Ge[i] + eGe*eref[i];
 
+		// production and redistribution
 		for (int n = 0; n < 6; n++)
 		{
 			int i = iIndex[n];
@@ -1299,6 +1399,76 @@ void TurbModel_CLS::calcRhs(mat &rhs, mat &var, double dt)
 
 		for (int i = 0; i < 9; i++) rhs(icls,i) *= dt;
 	}
+
+	// alternate matrix-based computation of rhs
+	//rhsFromDhat(rhs,var,dt);
+}
+
+void TurbModel_CLS::rhsFromDhat(mat &rhs, mat &var, double dt)
+{
+  Dhat.zeros();
+
+	double delta[3][3] = { {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0} };
+  int iIndex[9] = {0, 0, 0, 1, 1, 1, 2, 2, 2};
+  int jIndex[9] = {0, 1, 2, 0, 1, 2, 0, 1, 2};
+
+	for (int icls = 0; icls < ncls; icls++)
+	{
+		double eref[3];
+		eref[0] = var(icls,0); eref[1] = var(icls,1); eref[2] = var(icls,2);
+
+	  double I1, I2[3][3], I3[3][3];
+	  double I2term1[9][9], I2term2[9][9];
+
+		double C1_icls = 0.0;
+		for (int i = 0; i < 3; i++)
+			for (int j = 0; j < 3; j++)
+				C1_icls += C1[i][j]*eref[i]*eref[j];
+
+	  I1 = -2.0*C1_icls;
+	  for (int i = 0; i < 3; i++)
+	  	for (int j = 0; j < 3; j++)
+	  	{
+	  		I2[i][j] = -Gv[i][j];
+	  		for (int q = 0; q < 3; q++)
+	  			I2[i][j] += (Gn[q][j] + Gv[q][j])*eref[q]*eref[i];
+	  		I3[i][j] = C1_icls*(delta[i][j] - eref[i]*eref[j]);
+	  	}
+
+	  for (int v = 0; v < 9; v++)
+	  {
+	  	Dhat(icls*9 + v,icls*9 + v) += I1;
+	  	for (int h = 0; h < 9; h++)
+	  	{
+	  		I2term1[v][h] = 0.0;
+	  		I2term2[v][h] = 0.0;
+	  		for (int s = 0; s < 3; s++)
+	  		{
+	  			I2term1[v][h] += I2[jIndex[v]][s]*delta[iIndex[h]][iIndex[v]]*delta[jIndex[h]][s];
+	  			I2term2[v][h] += I2[iIndex[v]][s]*delta[iIndex[h]][jIndex[v]]*delta[jIndex[h]][s];
+	  		}
+
+	  		Dhat(icls*9 + v,icls*9 + h) += I2term1[v][h] + I2term2[v][h]
+	  				                         + I3[iIndex[v]][jIndex[v]]*delta[iIndex[h]][jIndex[h]];
+	  	}
+	  }
+	}
+
+	// compute rhs
+	vec Chat(ncls*9);
+
+	int rindex[9] = {0, 3, 4, 3, 1, 5, 4, 5, 2};
+	int lindex[6] = {0, 4, 8, 1, 2, 5};
+
+	for (int icls = 0; icls < ncls; icls++)
+		for (int n = 0; n < 9; n++)
+			Chat(icls*9 + n) = var(icls,3+rindex[n]);
+
+	Chat = Dhat*Chat;
+
+	for (int icls = 0; icls < ncls; icls++)
+		for (int n = 0; n < 6; n++)
+			rhs(icls,3+n) = Chat(icls*9 + lindex[n])*dt;
 }
 
 void TurbModel_CLS::calcRhsJacob(double (*eDrift)[3], double (*cDrift)[6], double *eref,
@@ -1472,6 +1642,8 @@ double TurbModel_CLS::calcRhsEps(double(*Gn)[3], double dt)
 
 void TurbModel_CLS::correction()
 {
+	// Normalizes the unit vector
+	// Ensures cluster matrix is "orthogonal" to unit vector
 	for (int icls = 0; icls < ncls; icls++)
 	{
 		double eicls[3], cicls[6];
@@ -1635,6 +1807,7 @@ void TurbModel_CLS::calcReStress(double *struc, double &eps_main, double *prod,
   // time integration
   if      (strcmp(tIntName, "fwEuler") == 0) fwEuler(dt, Gn);
   else if (strcmp(tIntName, "Heun") == 0)    Heun(dt, Gn);
+  else if (strcmp(tIntName, "RK4") == 0)     RK4(dt, Gn);
   else if (strcmp(tIntName, "CrankN") == 0)  CrankN(dt, Gn);
   else    cout << "Not a valid time integration scheme" << endl;
 
@@ -1680,18 +1853,49 @@ void TurbModel_CLS::calcReStress(double *struc, double &eps_main, double *prod,
 
 }
 
+void TurbModel_CLS::writeData(double St)
+{
+	FILE *fid;
+	string fname = "cData." + to_string(St) + ".dat";
+
+  fid = fopen(fname.c_str(), "w");
+  if (fid != NULL)
+  {
+  	fprintf(fid, "e[0]\te[1]\te[2]\n");
+    for (int ipar = 0; ipar < ncls; ipar += 100)
+      fprintf(fid, "%.8e\t%.8e\t%.8e\n", var(ipar,0), var(ipar,1), var(ipar,2));
+  }
+  else
+  	cout << "Could not open file " << fname << endl;
+
+  fclose(fid);
+  /*
+	cx_vec eigval = eig_gen(Dhat);
+
+	FILE *feig;
+  feig = fopen("eig.dat", "w");
+  if (feig != NULL)
+  {
+  	fprintf(feig,"variables = \"real\", \"imag\" \n");
+  	fprintf(feig,"zone T=\"eigenvalues\"\n");
+
+    for (int i = 0; i < ncls*9; i++)
+      fprintf(feig, "%.8e\t%.8e\n", real(eigval(i)), imag(eigval(i)));
+  }
+  else
+  	cout << "Could not open file " << "eig.dat" << endl;
+
+  fclose(feig);*/
+}
+
 /*############################################################################################
 #
-# Eulerian Simulation of SLM
+# Eulerian Simulation of SLM with Radial Basis Functions
 #
 ############################################################################################*/
 
-TurbModel_EUL::TurbModel_EUL(void) : TurbModel_SLM()
+TurbModel_RBF::TurbModel_RBF(void) : TurbModel_SLM()
 {
-	cout << "Model         : EUL" << endl;
-
-	epsilon = 6.0;
-
   Cn = 2.2;
   Cv = 1.0;
   Ceps1 = 1.5;
@@ -1699,7 +1903,7 @@ TurbModel_EUL::TurbModel_EUL(void) : TurbModel_SLM()
   Ceps3 = 0.01;
 }
 
-TurbModel_EUL::~TurbModel_EUL()
+TurbModel_RBF::~TurbModel_RBF()
 {
 	delete [] grid;
 	delete [] elem;
@@ -1707,10 +1911,705 @@ TurbModel_EUL::~TurbModel_EUL()
 	delete [] theta;
 }
 
-void TurbModel_EUL::initialHookScalarRansTurbModel(double Stau, double *struc,
+void TurbModel_RBF::initialHookScalarRansTurbModel(double Stau, double *struc,
 			                                             double &eps_init, double *prod,
                                                    double *rRedi, double (*G)[3])
 {
+	cout << "Model         : RBF" << endl;
+
+	epsilon = 9.0;
+  tke = 0.25;
+
+  // Open the mesh
+	string fileGrid = "grid.dat";
+	FILE *fp;
+	if ((fp = fopen(fileGrid.c_str(), "rt")) == NULL)
+		cout << "Could not open the file "<< fileGrid << endl;
+
+	int count = 0;
+	count += fscanf(fp,"variables = \"x\", \"y\", \"z\"\n");
+	count += fscanf(fp,"zone T=\"grid\"\n");
+	count += fscanf(fp,"Nodes=%d, Elements=%d, ZONETYPE=FETriangle\n", &nnodes, &nelems);
+	count += fscanf(fp,"DATAPACKING=POINT\n");
+	count += fscanf(fp,"DT=(SINGLE SINGLE SINGLE)\n");
+	if (count != 2) cout << "Error: nnodes or/and nelems were not read" << endl;
+	count = 0;
+
+	cout << "Nodes         : " << nnodes << endl;
+	cout << "Elems         : " << nelems << endl;
+
+	// Initialize variables
+  grid   = new double [nnodes][3];
+  elem   = new int [nelems][3];
+  lambda = new double [nnodes];
+  theta  = new double [nnodes];
+
+	Ainv.set_size(nnodes,nnodes);
+	U.set_size(nnodes,nnodes);
+	V.set_size(nnodes,nnodes);
+	W.set_size(nnodes,nnodes,6);
+	J.set_size(nnodes,3,3);
+	K.set_size(nnodes,3,3);
+	H.set_size(nnodes,3,3);
+
+	var.set_size(nnodes,6);
+
+	Dhat.set_size(nnodes*9,nnodes*9);
+
+	for (int i = 0; i < nnodes; i++)
+	{
+		// Read mesh
+		for (int j = 0; j < 3; j++)
+			count += fscanf(fp, "%lf", &grid[i][j]);
+
+		// Compute angles
+  	lambda[i] = atan2(grid[i][1],grid[i][0]);
+  	theta[i]  = atan2(grid[i][2],sqrt(grid[i][0]*grid[i][0] + grid[i][1]*grid[i][1]));
+
+  	double sinLa = sin(lambda[i]);
+    double cosLa = cos(lambda[i]);
+    double sinTh = sin(theta[i]);
+    double cosTh = cos(theta[i]);
+
+    // Compute J, K, H
+    J(i,0,0) = -sinLa*cosLa;
+    J(i,0,1) = cosLa*cosLa;
+    J(i,0,2) = 0.0;
+
+    J(i,1,0) = -sinLa*sinLa;
+    J(i,1,1) = sinLa*cosLa;
+    J(i,1,2) = 0.0;
+
+    J(i,2,0) = -sinLa*sinTh/cosTh;
+    J(i,2,1) = cosLa*sinTh/cosTh;
+    J(i,2,2) = 0.0;
+
+    K(i,0,0) = -cosLa*cosLa*sinTh*cosTh;
+    K(i,0,1) = -sinLa*cosLa*sinTh*cosTh;
+    K(i,0,2) = cosLa*cosTh*cosTh;
+
+    K(i,1,0) = -sinLa*cosLa*sinTh*cosTh;
+    K(i,1,1) = -sinLa*sinLa*sinTh*cosTh;
+    K(i,1,2) = sinLa*cosTh*cosTh;
+
+    K(i,2,0) = -cosLa*sinTh*sinTh;
+    K(i,2,1) = -sinLa*sinTh*sinTh;
+    K(i,2,2) = sinTh*cosTh;
+
+    H(i,0,0) = cosLa*cosLa*cosTh*cosTh;
+    H(i,0,1) = sinLa*cosLa*cosTh*cosTh;
+    H(i,0,2) = cosLa*sinTh*cosTh;
+
+    H(i,1,0) = sinLa*cosLa*cosTh*cosTh;
+    H(i,1,1) = sinLa*sinLa*cosTh*cosTh;
+    H(i,1,2) = sinLa*sinTh*cosTh;
+
+    H(i,2,0) = cosLa*sinTh*cosTh;
+    H(i,2,1) = sinLa*sinTh*cosTh;
+    H(i,2,2) = sinTh*sinTh;
+
+    // Initial condition
+    var(i,0) = tke/(4.0*M_PI)*(1.0 - H(i,0,0));
+    var(i,1) = tke/(4.0*M_PI)*(1.0 - H(i,1,1));
+    var(i,2) = tke/(4.0*M_PI)*(1.0 - H(i,2,2));
+    var(i,3) = tke/(4.0*M_PI)*(-H(i,0,1));
+    var(i,4) = tke/(4.0*M_PI)*(-H(i,0,2));
+    var(i,5) = tke/(4.0*M_PI)*(-H(i,1,2));
+	}
+
+	for (int i = 0; i < nelems; i++)
+		for (int j = 0; j < 3; j++)
+			count += fscanf(fp, "%d", &elem[i][j]);
+
+	if ( count != 3*(nnodes + nelems) )
+		cout << "Error: incorrect number of nodes or elems read" << endl;
+
+	fclose(fp);
+	cout << "Read grid file: " << fileGrid << endl;
+
+  // Compute the metrics
+	for (int i = 0; i < nnodes; i++)
+		for (int j = 0; j < nnodes; j++)
+		{
+			double sinLa_i = sin(lambda[i]);   double sinLa_j = sin(lambda[j]);
+			double cosLa_i = cos(lambda[i]);   double cosLa_j = cos(lambda[j]);
+			double sinTh_i = sin(theta[i]);    double sinTh_j = sin(theta[j]);
+			double cosTh_i = cos(theta[i]);    double cosTh_j = cos(theta[j]);
+
+			double sinLa_ij = sinLa_i*cosLa_j - cosLa_i*sinLa_j;
+			double cosLa_ij = sinLa_i*sinLa_j + cosLa_i*cosLa_j;
+
+			double r2 = 2.0 - 2.0*( cosTh_i*cosTh_j*cosLa_ij + sinTh_i*sinTh_j );
+
+			Ainv(i,j) = exp( -epsilon*epsilon*r2 );
+
+			U(i,j) = cosTh_i*cosTh_j*sinLa_ij;
+			V(i,j) = sinTh_i*cosTh_j*cosLa_ij - cosTh_i*sinTh_j;
+
+			U(i,j) *= -2.0*epsilon*epsilon*exp( -epsilon*epsilon*r2 );
+			V(i,j) *= -2.0*epsilon*epsilon*exp( -epsilon*epsilon*r2 );
+		}
+
+	double c = cond(Ainv);
+	cout << "Condt # of A  : " << c << endl;
+	Ainv = inv(Ainv);
+
+	U = U*Ainv;
+	V = V*Ainv;
+  //coeff.print("coeff:");
+
+	for (int inode = 0; inode < nnodes; inode++)
+		for (int jnode = 0; jnode < nnodes; jnode++)
+		{
+				W(inode,jnode,0) = Ainv(inode,jnode)*H(jnode,0,0);
+				W(inode,jnode,1) = Ainv(inode,jnode)*H(jnode,1,1);
+				W(inode,jnode,2) = Ainv(inode,jnode)*H(jnode,2,2);
+				W(inode,jnode,3) = Ainv(inode,jnode)*H(jnode,0,1);
+				W(inode,jnode,4) = Ainv(inode,jnode)*H(jnode,0,2);
+				W(inode,jnode,5) = Ainv(inode,jnode)*H(jnode,1,2);
+		}
+
+  outputs();
+  eps = tke/Stau;
+
+  // output to main
+  for (int i = 0; i < 6; i++)
+  {
+    struc[i] = rey[i];
+    struc[i+6] = dim[i];
+  }
+  eps_init = eps;
+
+  int index[3][3] = { {0, 3, 4}, {3, 1, 5}, {4, 5, 2} };
+  // production
+  for (int i = 0; i < 3; i++)
+    for (int j = i; j < 3; j++)
+      for (int k = 0; k < 3; k++)
+      {
+      	prod[index[i][j]] = -rey[index[i][k]]*G[j][k] - rey[index[j][k]]*G[i][k];
+      }
+
+  // rapid redistribution
+  for (int i = 0; i < 3; i++)
+    for (int j = i; j < 3; j++)
+    {
+      rRedi[index[i][j]] = 0.0;
+      for (int k = 0; k < 3; k++)
+      	for (int l = 0; l < 3; l++)
+      		rRedi[index[i][j]] += 2.0*G[k][l]*(M[i][l][j][k] + M[j][l][i][k]);
+    }
+
+  // output to screen
+  cout << "Degrees of f. : " << nnodes << endl;
+  cout << "Simulated TKE : " << tke << endl;
+  cout << "Exact TKE     : " << 0.25 << endl;
+  cout << "Eps           : " << eps << endl;
+  cout << "Sk/eps        : " << tke/eps << endl;
+  cout << "--------------------------------" << endl;
+}
+
+void TurbModel_RBF::fwEuler(double dt, double (*G)[3])
+{
+	mat rhs(nnodes,6);
+
+  inputs(G);
+
+	calcRhs(rhs, var, dt);
+	var += rhs;
+
+  double eps_rhs = calcRhsEps(G, dt);
+  eps += dt*eps_rhs;
+
+	outputs();
+}
+
+void TurbModel_RBF::Heun(double dt, double (*G)[3])
+{
+
+}
+
+void TurbModel_RBF::CrankN(double dt, double (*G)[3])
+{
+
+}
+
+void TurbModel_RBF::RK4(double dt, double (*G)[3])
+{
+	mat rhs1(nnodes,6), rhs2(nnodes,6), rhs3(nnodes,6), rhs4(nnodes,6);
+	mat ivar(nnodes,6);
+
+  inputs(G);
+
+	ivar = var;
+	calcRhs(rhs1, ivar, dt);
+
+	ivar = var + 0.5*rhs1;
+	calcRhs(rhs2, ivar, dt);
+
+	ivar = var + 0.5*rhs2;
+	calcRhs(rhs3, ivar, dt);
+
+	ivar = var + rhs3;
+	calcRhs(rhs4, ivar, dt);
+
+	var += 1.0/6.0*(rhs1 + 2.0*rhs2 + 2.0*rhs3 + rhs4);
+
+  double eps_rhs = calcRhsEps(G, dt);
+  eps += dt*eps_rhs;
+
+  correction();
+	outputs();
+}
+
+void TurbModel_RBF::calcRhs(mat &rhs, mat &var, double dt)
+{
+	double gamma = 0.0; // filter for stability
+
+	mat conv1;  conv1 = U*var;
+	mat conv2;  conv2 = V*var;
+	mat conv3;  conv3 = -gamma*Ainv*var;
+
+	int index[3][3] = { {0, 3, 4}, {3, 1, 5}, {4, 5, 2} };
+  int iIndex[6] = {0, 1, 2, 0, 0, 1};
+  int jIndex[6] = {0, 1, 2, 1, 2, 2};
+  double delta[3][3] = { {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0} };
+
+	// gradients
+  double Gnkk = Gn[0][0] + Gn[1][1] + Gn[2][2];
+  double Gt[3][3];
+	for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
+			Gt[i][j] = Gn[i][j] + Gv[i][j];
+
+	// loop through nodes
+	for (int inode = 0; inode < nnodes; inode++)
+	{
+		// coefficients
+		double GJ = 0.0, GK = 0.0, GH = 0.0, CH = 0.0;
+		double GtH[3][3];
+
+		for (int q = 0; q < 3; q++)
+			for (int r = 0; r < 3; r++)
+			{
+				GJ += Gn[q][r]*J(inode,q,r);
+				GK += Gn[q][r]*K(inode,q,r);
+				GH += Gn[q][r]*H(inode,q,r);
+				CH += C1[q][r]*H(inode,q,r);
+
+				GtH[q][r] = 0.0;
+				for (int p = 0; p < 3; p++)
+					GtH[q][r] += Gt[p][q]*H(inode,p,r);
+			}
+
+		double GGtH[3][3];
+		for (int i = 0; i < 3; i++)
+			for (int j = 0; j < 3; j++)
+				GGtH[i][j] = -Gv[i][j] + GtH[j][i];
+
+		double I1[6], I2[6], I3[6];
+		for (int n = 0; n < 6; n++)
+		{
+			int i = iIndex[n];
+			int j = jIndex[n];
+
+			// convection
+			conv1(inode,n) *= GJ;
+			conv2(inode,n) *= GK;
+
+			// sources (L1)
+			I1[n] = (Gnkk - 3.0*GH - 2.0*CH)*var(inode,n);
+
+			// sources (L2)
+			I2[n] = 0.0;
+			for (int s = 0; s < 3; s++)
+				I2[n] += GGtH[j][s]*var(inode,index[i][s]) + GGtH[i][s]*var(inode,index[j][s]);
+
+			// sources (L3)
+			I3[n] = CH*(delta[i][j] - H(inode,i,j))*(var(inode,0) + var(inode,1) + var(inode,2));
+
+			// right hand side
+			rhs(inode,n) = (conv1(inode,n) + conv2(inode,n) + conv3(inode,n)+ I1[n] + I2[n] + I3[n])*dt;
+		}
+	}
+
+	// alternate matrix-based computation of rhs
+	//rhsFromDhat(rhs, var, dt);
+}
+
+void TurbModel_RBF::rhsFromDhat(mat &rhs, mat &var, double dt)
+{
+	Dhat.zeros();
+
+	double delta[3][3] = { {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0} };
+  int iIndex[9] = {0, 0, 0, 1, 1, 1, 2, 2, 2};
+  int jIndex[9] = {0, 1, 2, 0, 1, 2, 0, 1, 2};
+
+  double gamma = 0.0;
+
+	// gradients
+  double Gnkk = Gn[0][0] + Gn[1][1] + Gn[2][2];
+  double Gt[3][3];
+	for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
+			Gt[i][j] = Gn[i][j] + Gv[i][j];
+
+  for (int inode = 0; inode < nnodes; inode++)
+  {
+		// coefficients
+		double GJ = 0.0, GK = 0.0, GH = 0.0, CH = 0.0;
+		double GtH[3][3];
+
+		for (int q = 0; q < 3; q++)
+			for (int r = 0; r < 3; r++)
+			{
+				GJ += Gn[q][r]*J(inode,q,r);
+				GK += Gn[q][r]*K(inode,q,r);
+				GH += Gn[q][r]*H(inode,q,r);
+				CH += C1[q][r]*H(inode,q,r);
+
+				GtH[q][r] = 0.0;
+				for (int p = 0; p < 3; p++)
+					GtH[q][r] += Gt[p][q]*H(inode,p,r);
+			}
+
+		double GGtH[3][3];
+		for (int i = 0; i < 3; i++)
+			for (int j = 0; j < 3; j++)
+				GGtH[i][j] = -Gv[i][j] + GtH[j][i];
+
+		// convection
+	  for (int jnode = 0; jnode < nnodes; jnode++)
+	  	for (int v = 0; v < 9; v++)
+	  		Dhat(inode*9 + v,jnode*9 + v) = GJ*U(inode,jnode) + GK*V(inode,jnode) - gamma*Ainv(inode,jnode);
+
+	  // sources
+    double I1, I2[3][3], I3[3][3];
+    double I2term1[9][9], I2term2[9][9];
+
+    I1 = Gnkk - 3.0*GH - 2.0*CH;
+    for (int i = 0; i < 3; i++)
+    	for (int j = 0; j < 3; j++)
+    	{
+    		I2[i][j] = GGtH[i][j];
+    		I3[i][j] = CH*(delta[i][j] - H(inode,i,j));
+    	}
+
+    for (int v = 0; v < 9; v++)
+    {
+    	Dhat(inode*9 + v,inode*9 + v) += I1;
+    	for (int h = 0; h < 9; h++)
+    	{
+    		I2term1[v][h] = 0.0;
+    		I2term2[v][h] = 0.0;
+    		for (int s = 0; s < 3; s++)
+    		{
+    			I2term1[v][h] += I2[jIndex[v]][s]*delta[iIndex[h]][iIndex[v]]*delta[jIndex[h]][s];
+    			I2term2[v][h] += I2[iIndex[v]][s]*delta[iIndex[h]][jIndex[v]]*delta[jIndex[h]][s];
+    		}
+
+    		Dhat(inode*9 + v,inode*9 + h) += I2term1[v][h] + I2term2[v][h]
+    				                           + I3[iIndex[v]][jIndex[v]]*delta[iIndex[h]][jIndex[h]];
+    	}
+    }
+  }
+
+  // compute rhs
+	vec Lhat(nnodes*9);
+
+	int rindex[9] = {0, 3, 4, 3, 1, 5, 4, 5, 2};
+	int lindex[6] = {0, 4, 8, 1, 2, 5};
+
+	for (int inode = 0; inode < nnodes; inode++)
+		for (int n = 0; n < 9; n++ )
+			Lhat(inode*9 + n) = var(inode,rindex[n]);
+
+	Lhat = Dhat*Lhat;
+
+	for (int inode = 0; inode < nnodes; inode++)
+		for (int n = 0; n < 6; n++)
+			rhs(inode,n) = Lhat(inode*9 + lindex[n])*dt;
+}
+
+double TurbModel_RBF::calcRhsEps(double(*G)[3], double dt)
+{
+  double prod = -rey[0]*G[0][0] - rey[3]*G[0][1] - rey[4]*G[0][2]
+                -rey[3]*G[1][0] - rey[1]*G[1][1] - rey[5]*G[1][2]
+                -rey[4]*G[2][0] - rey[5]*G[2][1] - rey[2]*G[2][2];
+
+  double vort[3];
+  vort[0] = G[2][1] - G[1][2];
+  vort[1] = G[0][2] - G[2][0];
+  vort[2] = G[1][0] - G[0][1];
+
+  double d[3][3];
+  double q2 = 2.0*tke;
+  d[0][0] = dim[0]/q2;   d[0][1] = dim[3]/q2;   d[0][2] = dim[4]/q2;
+  d[1][0] = dim[3]/q2;   d[1][1] = dim[1]/q2;   d[1][2] = dim[5]/q2;
+  d[2][0] = dim[4]/q2;   d[2][1] = dim[5]/q2;   d[2][2] = dim[2]/q2;
+
+  double OdO = vecDotMatDotVec3d(vort, vort, d);
+
+  double rhs = Ceps1*eps/tke*prod - Ceps2*eps*eps/tke - Ceps3*eps*sqrt(OdO);
+
+  return rhs;
+}
+
+void TurbModel_RBF::correction()
+{
+	// Ensures cluster matrix is "orthogonal" to unit vector
+	for (int inode = 0; inode < nnodes; inode++)
+	{
+		double einode[3], linode[6];
+
+		einode[0] = cos(lambda[inode])*cos(theta[inode]);
+		einode[1] = sin(lambda[inode])*cos(theta[inode]);
+		einode[2] = sin(theta[inode]);
+
+		for (int i = 0; i < 6; i++)
+			linode[i] = var(inode,i);
+
+		/*for (int i = 0; i < 3; i++)
+			linode[i] = max(linode[i],0.0);
+
+		if (linode[3]*linode[3] > linode[0]*linode[1])
+			linode[3] = sgn(linode[3])*sqrt(linode[0]*linode[1]);
+
+		if (linode[4]*linode[4] > linode[0]*linode[2])
+			linode[4] = sgn(linode[4])*sqrt(linode[0]*linode[2]);
+
+		if (linode[5]*linode[5] > linode[1]*linode[2])
+			linode[5] = sgn(linode[5])*sqrt(linode[1]*linode[2]);*/
+
+		SymMatOrthoVec3d(linode, einode);
+
+		for (int i = 0; i < 6; i++)
+			var(inode,i) = linode[i];
+	}
+}
+
+void TurbModel_RBF::inputs(double(*G)[3])
+{
+  double r[3][3], d[3][3], f[3][3], rd[3][3];
+  double q2 = 2.0*tke;
+
+  r[0][0] = rey[0]/q2;   r[0][1] = rey[3]/q2;   r[0][2] = rey[4]/q2;
+  r[1][0] = rey[3]/q2;   r[1][1] = rey[1]/q2;   r[1][2] = rey[5]/q2;
+  r[2][0] = rey[4]/q2;   r[2][1] = rey[5]/q2;   r[2][2] = rey[2]/q2;
+
+  d[0][0] = dim[0]/q2;   d[0][1] = dim[3]/q2;   d[0][2] = dim[4]/q2;
+  d[1][0] = dim[3]/q2;   d[1][1] = dim[1]/q2;   d[1][2] = dim[5]/q2;
+  d[2][0] = dim[4]/q2;   d[2][1] = dim[5]/q2;   d[2][2] = dim[2]/q2;
+
+  f[0][0] = cir[0]/q2;   f[0][1] = cir[3]/q2;   f[0][2] = cir[4]/q2;
+  f[1][0] = cir[3]/q2;   f[1][1] = cir[1]/q2;   f[1][2] = cir[5]/q2;
+  f[2][0] = cir[4]/q2;   f[2][1] = cir[5]/q2;   f[2][2] = cir[2]/q2;
+
+  matTimesMat3d(rd, r, d);
+  double tau = 0.0;
+  for (int i = 0; i < 3; i++)
+    for (int j = 0; j < 3; j++)
+      tau += rd[i][j]*r[j][i];
+  tau *= 2.0*Cv*tke/eps;
+
+  for (int i = 0; i < 3; i++)
+  	for (int j = 0; j < 3; j++)
+  	{
+  		Gn[i][j] = G[i][j] + Cn/tau*rd[i][j];
+  		Gv[i][j] = G[i][j] + Cv/tau*rd[i][j];
+  	}
+
+  double Ovec[3], Omag;
+  Ovec[0] = rd[2][1] - rd[1][2];
+  Ovec[1] = rd[0][2] - rd[2][0];
+  Ovec[2] = rd[1][0] - rd[0][1];
+
+  Omag = sqrt(vecDotVec3d(Ovec,Ovec));
+
+  for (int i = 0; i < 3; i++)
+  	for (int j = 0; j < 3; j++)
+  		C1[i][j] = 8.5/tau*Omag*f[i][j];
+}
+
+void TurbModel_RBF:: outputs()
+{
+	int index[3][3] = { {0, 3, 4}, {3, 1, 5}, {4, 5, 2} };
+
+	// initialize to zero
+  for (int i = 0; i < 6; i++)
+  {
+    rey[i] = 0.0;
+    dim[i] = 0.0;
+  }
+
+  // structure tensors
+  mat c(nnodes,6), d(nnodes,6);
+
+  c = Ainv*var;
+  for (int i = 0; i < 6; i++)
+  	d.col(i) = W.slice(i)*(var.col(0) + var.col(1) + var.col(2));
+
+  for (int inode = 0; inode < nnodes; inode++)
+  {
+  	for (int i = 0; i < 6; i++)
+  	{
+  		rey[i] += c(inode,i);
+  		dim[i] += d(inode,i);
+  	}
+  }
+
+  // normalize
+  double I1 = M_PI/(epsilon*epsilon)*(1.0 - exp(-4.0*epsilon*epsilon));
+  for (int i = 0; i < 6; i++)
+  {
+    rey[i] *= I1;
+    dim[i] *= I1;
+  }
+
+  // tke, dimensionality and circulicity
+  tke = 0.5*(rey[0] + rey[1] + rey[2]);
+
+  for (int i = 0; i < 3; i++) cir[i] = 2.0*tke - rey[i] - dim[i];
+  for (int i = 3; i < 6; i++) cir[i] = -rey[i] - dim[i];
+}
+
+void TurbModel_RBF::writeData(double St)
+{
+	FILE *fsph;
+	string fname;
+
+	// sphere data
+	fname = "sphere." + to_string(St) + ".dat";
+  fsph = fopen(fname.c_str(), "w");
+  if (fsph != NULL)
+  {
+  	fprintf(fsph,"variables = \"x\", \"y\", \"z\" \"coeff_1\" \"coeff_2\" \"coeff_3\"");
+  	fprintf(fsph,"\"coeff_4\" \"coeff_5\" \"coeff_6\"\n");
+  	fprintf(fsph,"zone T=\"sphere\"\n");
+  	fprintf(fsph,"Nodes=%d, Elements=%d, ZONETYPE=FETriangle\n", nnodes, nelems);
+  	fprintf(fsph,"DATAPACKING=POINT\n");
+  	fprintf(fsph,"DT=(SINGLE SINGLE SINGLE SINGLE)\n");
+
+    for (int i = 0; i < nnodes; i++)
+    {
+      fprintf(fsph, "%.8e\t%.8e\t%.8e\t", grid[i][0], grid[i][1], grid[i][2]);
+      fprintf(fsph, "%.8e\t%.8e\t%.8e\t", var(i,0), var(i,1), var(i,2));
+      fprintf(fsph, "%.8e\t%.8e\t%.8e\n", var(i,3), var(i,4), var(i,5));
+    }
+    for (int i = 0; i < nelems; i++)
+    	fprintf(fsph, "%d\t%d\t%d\n", elem[i][0], elem[i][1], elem[i][2]);
+  }
+  else
+  	cout << "Could not open file " << fname << endl;
+
+  fclose(fsph);
+
+  // plane data
+	/*fname = "points." + to_string(St) + ".dat";
+  fid = fopen(fname.c_str(), "w");
+  if (fid != NULL)
+  {
+    for (int i = 0; i < nnodes; i++)
+    	fprintf(fid, "%lf\t%lf\t%.8e\n", lambda[i], theta[i], var(i,0));
+  }
+  else
+  	cout << "Could not open file " << fname << endl;
+
+  fclose(fid);*/
+
+	/*cx_vec eigval = eig_gen(Dhat);
+
+	FILE *feig;
+  feig = fopen("eig.dat", "w");
+  if (feig != NULL)
+  {
+  	fprintf(feig,"variables = \"real\", \"imag\" \n");
+  	fprintf(feig,"zone T=\"eigenvalues\"\n");
+
+    for (int i = 0; i < nnodes*9; i++)
+      fprintf(feig, "%.8e\t%.8e\n", real(eigval(i)), imag(eigval(i)));
+  }
+  else
+  	cout << "Could not open file " << "eig.dat" << endl;
+
+  fclose(feig);*/
+}
+
+void TurbModel_RBF::calcReStress(double *struc, double &eps_main, double *prod,
+                                 double *rRedi, double *sRediEps,
+                                 double (*G)[3], double (*Gph)[3],
+                                 double (*Gp1)[3], double dt, char* tIntName)
+{
+  // time integration
+  if      (strcmp(tIntName, "fwEuler") == 0) fwEuler(dt, G);
+  else if (strcmp(tIntName, "Heun") == 0)    Heun(dt, G);
+  else if (strcmp(tIntName, "CrankN") == 0)  CrankN(dt, G);
+  else if (strcmp(tIntName, "RK4") == 0)     RK4(dt, G);
+  else    cout << "Not a valid time integration scheme" << endl;
+
+  // structure tensors and eps to main
+  for (int i = 0; i < 6; i++)
+  {
+    struc[i] = rey[i];
+    struc[i+6] = dim[i];
+  }
+  eps_main = eps;
+
+  int index[3][3] = { {0, 3, 4}, {3, 1, 5}, {4, 5, 2} };
+  // production
+  for (int i = 0; i < 3; i++)
+    for (int j = i; j < 3; j++)
+      for (int k = 0; k < 3; k++)
+      {
+      	prod[index[i][j]] = -rey[index[i][k]]*G[j][k] - rey[index[j][k]]*G[i][k];
+      }
+
+  // rapid redistribution
+  for (int i = 0; i < 3; i++)
+    for (int j = i; j < 3; j++)
+    {
+    	rRedi[index[i][j]] = 0.0;
+    	for (int k = 0; k < 3; k++)
+    		for (int l = 0; l < 3; l++)
+    			rRedi[index[i][j]] += 2.0*G[k][l]*(M[i][l][j][k] + M[j][l][i][k]);
+    }
+
+  // slow redistribution + dissipation
+  double RD[3][3] = { {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0} };
+  for (int i = 0; i < 3; i++)
+    for (int j = 0; j < 3; j++)
+      for (int k = 0; k < 3; k++)
+      	RD[i][j] += rey[index[i][k]]*dim[index[k][j]];
+
+  for (int i = 0; i < 3; i++)
+    for (int j = i; j < 3; j++)
+    {
+      sRediEps[index[i][j]] = 0.0;
+    }
+
+}
+
+/*############################################################################################
+#
+# Eulerian Simulation of SLM with RBF-QR method
+#
+############################################################################################*/
+
+TurbModel_RBFQR::TurbModel_RBFQR(void) : TurbModel_RBF()
+{
+
+}
+
+TurbModel_RBFQR::~TurbModel_RBFQR()
+{
+
+}
+
+void TurbModel_RBFQR::initialHookScalarRansTurbModel(double Stau, double *struc,
+			                                              double &eps_init, double *prod,
+                                                    double *rRedi, double (*G)[3])
+{
+	cout << "Model         : RBFQR" << endl;
+	epsilon = 1.0e-00;
   tke = 0.25;
 
   // Open the mesh
@@ -1818,34 +2717,8 @@ void TurbModel_EUL::initialHookScalarRansTurbModel(double Stau, double *struc,
 	fclose(fp);
 	cout << "Read grid file: " << fileGrid << endl;
 
-  // Compute the metrics
-	for (int i = 0; i < nnodes; i++)
-		for (int j = 0; j < nnodes; j++)
-		{
-			double sinLa_i = sin(lambda[i]);   double sinLa_j = sin(lambda[j]);
-			double cosLa_i = cos(lambda[i]);   double cosLa_j = cos(lambda[j]);
-			double sinTh_i = sin(theta[i]);    double sinTh_j = sin(theta[j]);
-			double cosTh_i = cos(theta[i]);    double cosTh_j = cos(theta[j]);
-
-			double sinLa_ij = sinLa_i*cosLa_j - cosLa_i*sinLa_j;
-			double cosLa_ij = sinLa_i*sinLa_j + cosLa_i*cosLa_j;
-
-			double r2 = 2.0 - 2.0*( cosTh_i*cosTh_j*cosLa_ij + sinTh_i*sinTh_j );
-
-			Ainv(i,j) = exp( -epsilon*epsilon*r2 );
-
-			U(i,j) = cosTh_i*cosTh_j*sinLa_ij;
-			V(i,j) = sinTh_i*cosTh_j*cosLa_ij - cosTh_i*sinTh_j;
-
-			U(i,j) *= -2.0*epsilon*epsilon*exp( -epsilon*epsilon*r2 );
-			V(i,j) *= -2.0*epsilon*epsilon*exp( -epsilon*epsilon*r2 );
-		}
-
-	Ainv = inv(Ainv);
-
-	U = U*Ainv;
-	V = V*Ainv;
-  //coeff.print("coeff:");
+	rbfqr(Ainv,Rtran,U,V);
+	cout << "Ainv: " << Ainv(23,497) << endl;
 
 	for (int inode = 0; inode < nnodes; inode++)
 		for (int jnode = 0; jnode < nnodes; jnode++)
@@ -1889,6 +2762,7 @@ void TurbModel_EUL::initialHookScalarRansTurbModel(double Stau, double *struc,
     }
 
   // output to screen
+  cout << "Degrees of f. : " << nnodes << endl;
   cout << "Simulated TKE : " << tke << endl;
   cout << "Exact TKE     : " << 0.25 << endl;
   cout << "Eps           : " << eps << endl;
@@ -1896,195 +2770,126 @@ void TurbModel_EUL::initialHookScalarRansTurbModel(double Stau, double *struc,
   cout << "--------------------------------" << endl;
 }
 
-void TurbModel_EUL::fwEuler(double dt, double (*G)[3])
+void TurbModel_RBFQR::rbfqr(mat &Ainv, mat &Rtran, mat &U, mat &V)
 {
-	mat rhs(nnodes,6);
+	double precision = 2.2204e-16;
+	double normRatio = 0.0;
+	int mu = 0;
+	int mu_n = ceil(sqrt(nnodes)) - 1;
+	int index = 0;
 
-  inputs(G);
+	mat Y, P, Q, B;
 
-	calcRhs(rhs, var, dt);
-	var += rhs;
+	while ( normRatio < -log10(precision) )
+	{
+		mat sph, sphl, spht;
+		sphericalHarmonics(mu, sph, sphl, spht);
+		double c_mu = sphericalCoeff(mu);
 
-  double eps_rhs = calcRhsEps(G, dt);
-  eps += dt*eps_rhs;
+		Y.insert_cols(index,sph);
+		P.insert_cols(index,sphl);
+		Q.insert_cols(index,spht);
 
-	outputs();
+		B.insert_cols(index,c_mu*sph);
+		B.col(index+mu) *= 0.5;
+
+		if (mu > mu_n - 1)
+		{
+			double num = norm( B.cols(mu_n*mu_n,(mu_n+1)*(mu_n+1)-1), "inf");
+			double den = norm( B.col((mu+1)*(mu+1)-1), "inf");
+			normRatio = log10(num/den*pow(epsilon,2.0*(mu_n - mu)));
+		}
+
+		index = index + 2*mu + 1;
+		mu = mu + 1;
+	}
+
+	mat buffer, R;
+	qr(buffer,R,B);
+
+	mat Inn = eye<mat>(nnodes,nnodes);
+	if (mu == (mu_n+1))
+	{
+		// pure spherical harmonics
+		Rtran = Inn;
+	}
+	else
+	{
+		mat E(nnodes, mu*mu-nnodes);
+		mat E1(1, mu*mu-nnodes), E2(nnodes, 1);
+
+		// compute E
+		for (int j = 0; j < (mu*mu-nnodes); j++)
+			E1(0,j) = ceil(sqrt(j+nnodes+1)) - 1.0;
+		E1 = repmat(E1,nnodes,1);
+
+		for (int i = 0; i < nnodes; i++)
+			E2(i,0) = ceil(sqrt(i+1)) - 1.0;
+		E2 = repmat(E2,1,mu*mu-nnodes);
+
+		for (int i = 0; i < nnodes; i++)
+			for (int j = 0; j < (mu*mu-nnodes); j++)
+				E(i,j) = pow(epsilon,2.0*(E1(i,j) - E2(i,j)));
+
+		// compute R_new
+		Rtran = solve(R.cols(0,nnodes-1),R.cols(nnodes,mu*mu-1));
+		Rtran = E % Rtran;
+		Rtran = join_horiz(Inn,Rtran);
+		Rtran = Rtran.t();
+	}
+
+	// compute Ainv, U, and V
+	Ainv = Y*Rtran;
+	cout << "Condt # of A  : " << cond(Ainv) << endl;
+	Ainv = inv(Ainv);
+
+	U = P*Rtran*Ainv;
+	V = Q*Rtran*Ainv;
 }
 
-void TurbModel_EUL::Heun(double dt, double (*G)[3])
+void TurbModel_RBFQR::sphericalHarmonics(int mu, mat &sph, mat &sphl, mat &spht)
 {
+	sph.set_size(nnodes,2*mu+1);
+	sphl.set_size(nnodes,2*mu+1);
+	spht.set_size(nnodes,2*mu+1);
 
-}
+	int length = gsl_sf_legendre_array_n(mu);
+	double *legen = new double [length];
 
-void TurbModel_EUL::CrankN(double dt, double (*G)[3])
-{
-
-}
-
-void TurbModel_EUL::RK4(double dt, double (*G)[3])
-{
-	mat rhs1(nnodes,6), rhs2(nnodes,6), rhs3(nnodes,6), rhs4(nnodes,6);
-	mat ivar(nnodes,6);
-
-  inputs(G);
-
-	ivar = var;
-	calcRhs(rhs1, ivar, dt);
-
-	ivar = var + 0.5*rhs1;
-	calcRhs(rhs2, ivar, dt);
-
-	ivar = var + 0.5*rhs2;
-	calcRhs(rhs3, ivar, dt);
-
-	ivar = var + rhs3;
-	calcRhs(rhs4, ivar, dt);
-
-	var += 1.0/6.0*(rhs1 + 2.0*rhs2 + 2.0*rhs3 + rhs4);
-
-  double eps_rhs = calcRhsEps(G, dt);
-  eps += dt*eps_rhs;
-
-	outputs();
-}
-
-void TurbModel_EUL::calcRhs(mat &rhs, mat &var, double dt)
-{
-	mat conv1;  conv1 = U*var;
-	mat conv2;  conv2 = V*var;
-
-	int index[3][3] = { {0, 3, 4}, {3, 1, 5}, {4, 5, 2} };
-  int iIndex[6] = {0, 1, 2, 0, 0, 1};
-  int jIndex[6] = {0, 1, 2, 1, 2, 2};
-  double delta[3][3] = { {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0} };
-
-	// gradients
-  double Gnkk = Gn[0][0] + Gn[1][1] + Gn[2][2];
-  double Gt[3][3];
-	for (int i = 0; i < 3; i++)
-		for (int j = 0; j < 3; j++)
-			Gt[i][j] = Gn[i][j] + Gv[i][j];
-
-	// loop through nodes
 	for (int inode = 0; inode < nnodes; inode++)
 	{
-		// coefficients
-		double GJ = 0.0, GK = 0.0, GH = 0.0, CH = 0.0;
-		double GtH[3][3];
+		double x = sin(theta[inode]);
+		double y = cos(theta[inode]);
 
-		for (int q = 0; q < 3; q++)
-			for (int r = 0; r < 3; r++)
-			{
-				GJ += Gn[q][r]*J(inode,q,r);
-				GK += Gn[q][r]*K(inode,q,r);
-				GH += Gn[q][r]*H(inode,q,r);
-				CH += C1[q][r]*H(inode,q,r);
-
-				GtH[q][r] = 0.0;
-				for (int p = 0; p < 3; p++)
-					GtH[q][r] += Gt[p][q]*H(inode,p,r);
-			}
-
-		double GGtH[3][3];
-		for (int i = 0; i < 3; i++)
-			for (int j = 0; j < 3; j++)
-				GGtH[i][j] = -Gv[i][j] + GtH[j][i];
-
-		double I1[6], I2[6], I3[6];
-		for (int n = 0; n < 6; n++)
+		gsl_sf_legendre_array_e(GSL_SF_LEGENDRE_SPHARM, mu, x, -1.0, legen);
+		for (int nu = 0; nu <= mu; nu++)
 		{
-			int i = iIndex[n];
-			int j = jIndex[n];
+			int index = gsl_sf_legendre_array_index(mu,nu);
+			sph(inode,mu-nu) = legen[index]*sin(nu*lambda[inode]);
+			sph(inode,mu+nu) = legen[index]*cos(nu*lambda[inode]);
 
-			// convection
-			conv1(inode,n) *= GJ;
-			conv2(inode,n) *= GK;
+			sphl(inode,mu-nu) =  nu*legen[index]*cos(nu*lambda[inode]);
+			sphl(inode,mu+nu) = -nu*legen[index]*sin(nu*lambda[inode]);
 
-			// sources (L1)
-			I1[n] = (Gnkk - 3.0*GH - 2.0*CH)*var(inode,n);
-
-			// sources (L2)
-			I2[n] = 0.0;
-			for (int s = 0; s < 3; s++)
-				I2[n] += GGtH[j][s]*var(inode,index[i][s]) + GGtH[i][s]*var(inode,index[j][s]);
-
-			// sources (L3)
-			I3[n] = CH*(delta[i][j] - H(inode,i,j))*(var(inode,0) + var(inode,1) + var(inode,2));
-
-			// right hand side
-			rhs(inode,n) = (conv1(inode,n) + conv2(inode,n) + I1[n] + I2[n] + I3[n])*dt;
+			int index2 = gsl_sf_legendre_array_index(mu-1,nu);
+			double deriv = 1.0/(x*x - 1.0)*(mu*x*legen[index] - (mu + nu)*legen[index2]);
+			spht(inode,mu-nu) = y*deriv*sin(nu*lambda[inode]);
+			spht(inode,mu+nu) = y*deriv*cos(nu*lambda[inode]);
 		}
 	}
+
+	delete [] legen;
 }
 
-double TurbModel_EUL::calcRhsEps(double(*G)[3], double dt)
+double TurbModel_RBFQR::sphericalCoeff(int mu)
 {
-  double prod = -rey[0]*G[0][0] - rey[3]*G[0][1] - rey[4]*G[0][2]
-                -rey[3]*G[1][0] - rey[1]*G[1][1] - rey[5]*G[1][2]
-                -rey[4]*G[2][0] - rey[5]*G[2][1] - rey[2]*G[2][2];
+	double c_mu = 4.0*pow(M_PI,1.5)*exp(-2.0*epsilon*epsilon)/pow(epsilon,2.0*mu + 1.0);
+	c_mu *= gsl_sf_bessel_Inu(mu+0.5, 2.0*epsilon*epsilon);
 
-  double vort[3];
-  vort[0] = G[2][1] - G[1][2];
-  vort[1] = G[0][2] - G[2][0];
-  vort[2] = G[1][0] - G[0][1];
-
-  double d[3][3];
-  double q2 = 2.0*tke;
-  d[0][0] = dim[0]/q2;   d[0][1] = dim[3]/q2;   d[0][2] = dim[4]/q2;
-  d[1][0] = dim[3]/q2;   d[1][1] = dim[1]/q2;   d[1][2] = dim[5]/q2;
-  d[2][0] = dim[4]/q2;   d[2][1] = dim[5]/q2;   d[2][2] = dim[2]/q2;
-
-  double OdO = vecDotMatDotVec3d(vort, vort, d);
-
-  double rhs = Ceps1*eps/tke*prod - Ceps2*eps*eps/tke - Ceps3*eps*sqrt(OdO);
-
-  return rhs;
+	return c_mu;
 }
 
-void TurbModel_EUL::inputs(double(*G)[3])
-{
-  double r[3][3], d[3][3], f[3][3], rd[3][3];
-  double q2 = 2.0*tke;
-
-  r[0][0] = rey[0]/q2;   r[0][1] = rey[3]/q2;   r[0][2] = rey[4]/q2;
-  r[1][0] = rey[3]/q2;   r[1][1] = rey[1]/q2;   r[1][2] = rey[5]/q2;
-  r[2][0] = rey[4]/q2;   r[2][1] = rey[5]/q2;   r[2][2] = rey[2]/q2;
-
-  d[0][0] = dim[0]/q2;   d[0][1] = dim[3]/q2;   d[0][2] = dim[4]/q2;
-  d[1][0] = dim[3]/q2;   d[1][1] = dim[1]/q2;   d[1][2] = dim[5]/q2;
-  d[2][0] = dim[4]/q2;   d[2][1] = dim[5]/q2;   d[2][2] = dim[2]/q2;
-
-  f[0][0] = cir[0]/q2;   f[0][1] = cir[3]/q2;   f[0][2] = cir[4]/q2;
-  f[1][0] = cir[3]/q2;   f[1][1] = cir[1]/q2;   f[1][2] = cir[5]/q2;
-  f[2][0] = cir[4]/q2;   f[2][1] = cir[5]/q2;   f[2][2] = cir[2]/q2;
-
-  matTimesMat3d(rd, r, d);
-  double tau = 0.0;
-  for (int i = 0; i < 3; i++)
-    for (int j = 0; j < 3; j++)
-      tau += rd[i][j]*r[j][i];
-  tau *= 2.0*Cv*tke/eps;
-
-  for (int i = 0; i < 3; i++)
-  	for (int j = 0; j < 3; j++)
-  	{
-  		Gn[i][j] = G[i][j] + Cn/tau*rd[i][j];
-  		Gv[i][j] = G[i][j] + Cv/tau*rd[i][j];
-  	}
-
-  double Ovec[3], Omag;
-  Ovec[0] = rd[2][1] - rd[1][2];
-  Ovec[1] = rd[0][2] - rd[2][0];
-  Ovec[2] = rd[1][0] - rd[0][1];
-
-  Omag = sqrt(vecDotVec3d(Ovec,Ovec));
-
-  for (int i = 0; i < 3; i++)
-  	for (int j = 0; j < 3; j++)
-  		C1[i][j] = 8.5/tau*Omag*f[i][j];
-}
-
-void TurbModel_EUL:: outputs()
+void TurbModel_RBFQR:: outputs()
 {
 	int index[3][3] = { {0, 3, 4}, {3, 1, 5}, {4, 5, 2} };
 
@@ -2106,13 +2911,13 @@ void TurbModel_EUL:: outputs()
   {
   	for (int i = 0; i < 6; i++)
   	{
-  		rey[i] += c(inode,i);
-  		dim[i] += d(inode,i);
+  		rey[i] += Rtran(0,inode)*c(inode,i);
+  		dim[i] += Rtran(0,inode)*d(inode,i);
   	}
   }
 
   // normalize
-  double I1 = M_PI/(epsilon*epsilon)*(1.0 - exp(-4.0*epsilon*epsilon));
+  double I1 = 2.0*sqrt(M_PI);
   for (int i = 0; i < 6; i++)
   {
     rey[i] *= I1;
@@ -2126,101 +2931,3 @@ void TurbModel_EUL:: outputs()
   for (int i = 3; i < 6; i++) cir[i] = -rey[i] - dim[i];
 }
 
-void TurbModel_EUL::writeData(double St)
-{
-	FILE *fsph;
-	string fname;
-
-	// sphere data
-	fname = "sphere." + to_string(St) + ".dat";
-  fsph = fopen(fname.c_str(), "w");
-  if (fsph != NULL)
-  {
-  	fprintf(fsph,"variables = \"x\", \"y\", \"z\" \"coeff_1\" \"coeff_2\" \"coeff_3\"");
-  	fprintf(fsph,"\"coeff_4\" \"coeff_5\" \"coeff_6\"\n");
-  	fprintf(fsph,"zone T=\"sphere\"\n");
-  	fprintf(fsph,"Nodes=%d, Elements=%d, ZONETYPE=FETriangle\n", nnodes, nelems);
-  	fprintf(fsph,"DATAPACKING=POINT\n");
-  	fprintf(fsph,"DT=(SINGLE SINGLE SINGLE SINGLE)\n");
-
-    for (int i = 0; i < nnodes; i++)
-    {
-      fprintf(fsph, "%.8e\t%.8e\t%.8e\t", grid[i][0], grid[i][1], grid[i][2]);
-      fprintf(fsph, "%.8e\t%.8e\t%.8e\t", var(i,0), var(i,1), var(i,2));
-      fprintf(fsph, "%.8e\t%.8e\t%.8e\n", var(i,3), var(i,4), var(i,5));
-    }
-    for (int i = 0; i < nelems; i++)
-    	fprintf(fsph, "%d\t%d\t%d\n", elem[i][0], elem[i][1], elem[i][2]);
-  }
-  else
-  	cout << "Could not open file " << fname << endl;
-
-  fclose(fsph);
-
-  // plane data
-	/*fname = "points." + to_string(St) + ".dat";
-  fid = fopen(fname.c_str(), "w");
-  if (fid != NULL)
-  {
-    for (int i = 0; i < nnodes; i++)
-    	fprintf(fid, "%lf\t%lf\t%.8e\n", lambda[i], theta[i], var(i,0));
-  }
-  else
-  	cout << "Could not open file " << fname << endl;
-
-  fclose(fid);*/
-}
-
-void TurbModel_EUL::calcReStress(double *struc, double &eps_main, double *prod,
-                                 double *rRedi, double *sRediEps,
-                                 double (*G)[3], double (*Gph)[3],
-                                 double (*Gp1)[3], double dt, char* tIntName)
-{
-  // time integration
-  if      (strcmp(tIntName, "fwEuler") == 0) fwEuler(dt, G);
-  else if (strcmp(tIntName, "Heun") == 0)    Heun(dt, G);
-  else if (strcmp(tIntName, "CrankN") == 0)  CrankN(dt, G);
-  else if (strcmp(tIntName, "RK4") == 0)     RK4(dt, G);
-  else    cout << "Not a valid time integration scheme" << endl;
-
-  // structure tensors and eps to main
-  for (int i = 0; i < 6; i++)
-  {
-    struc[i] = rey[i];
-    struc[i+6] = dim[i];
-  }
-  eps_main = eps;
-
-  int index[3][3] = { {0, 3, 4}, {3, 1, 5}, {4, 5, 2} };
-  // production
-  for (int i = 0; i < 3; i++)
-    for (int j = i; j < 3; j++)
-      for (int k = 0; k < 3; k++)
-      {
-      	prod[index[i][j]] = -rey[index[i][k]]*G[j][k] - rey[index[j][k]]*G[i][k];
-      }
-
-  // rapid redistribution
-  for (int i = 0; i < 3; i++)
-    for (int j = i; j < 3; j++)
-    {
-    	rRedi[index[i][j]] = 0.0;
-    	for (int k = 0; k < 3; k++)
-    		for (int l = 0; l < 3; l++)
-    			rRedi[index[i][j]] += 2.0*G[k][l]*(M[i][l][j][k] + M[j][l][i][k]);
-    }
-
-  // slow redistribution + dissipation
-  double RD[3][3] = { {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0} };
-  for (int i = 0; i < 3; i++)
-    for (int j = 0; j < 3; j++)
-      for (int k = 0; k < 3; k++)
-      	RD[i][j] += rey[index[i][k]]*dim[index[k][j]];
-
-  for (int i = 0; i < 3; i++)
-    for (int j = i; j < 3; j++)
-    {
-      sRediEps[index[i][j]] = 0.0;
-    }
-
-}

@@ -27,7 +27,7 @@ class TurbModel_PAR: public TurbModel_SLM
 {
   // Constructors & Destructor
 public:
-  TurbModel_PAR();
+  TurbModel_PAR(int dfree);
   virtual ~TurbModel_PAR();
 
   // Data memebers
@@ -63,6 +63,8 @@ public:
 
   void semiHeun(double dt, double (*Gn)[3]);
 
+  void semiRK4(double dt, double (*Gn)[3]);
+
   void calcTurbStatistics();
 
   void writeData(double St);
@@ -82,7 +84,7 @@ class TurbModel_IPRM: public TurbModel_PAR
 {
   // Constructors & Destructor
 public:
-  TurbModel_IPRM();
+  TurbModel_IPRM(int dfree);
   ~TurbModel_IPRM() {};
 
   // Data members
@@ -101,7 +103,7 @@ class TurbModel_LANG: public TurbModel_PAR
 {
   // Constructors & Destructor
 public:
-  TurbModel_LANG();
+  TurbModel_LANG(int dfree);
   ~TurbModel_LANG() {};
 
   // Data members
@@ -119,7 +121,7 @@ class TurbModel_CLS: public TurbModel_SLM
 {
   // Constructors & Destructor
 public:
-  TurbModel_CLS();
+  TurbModel_CLS(int dfree);
   virtual ~TurbModel_CLS();
 
   // Data memebers
@@ -128,9 +130,9 @@ public:
   int nmodes;  // number of modes per shell
   int ncls;    // number of clusters
 
-  double (*e)[3];
-  double (*c)[6];
   mat var;
+
+  mat Dhat;
 
   double Gn[3][3], Gv[3][3], C1[3][3];
   double eps;
@@ -151,6 +153,8 @@ public:
 
   void Heun(double dt, double (*Gn)[3]);
 
+  void RK4(double dt, double (*G)[3]);
+
   void CrankN(double dt, double (*Gn)[3]);
 
   virtual void calcRhs(mat &rhs, mat &var, double dt);
@@ -166,14 +170,18 @@ public:
 
   virtual double calcRhsEps(double (*Gn)[3], double dt);
 
+  void writeData(double St);
+
+  void rhsFromDhat(mat &rhs, mat &var, double dt);
+
 };
 
-class TurbModel_EUL: public TurbModel_SLM
+class TurbModel_RBF: public TurbModel_SLM
 {
   // Constructors & Destructor
 public:
-  TurbModel_EUL();
-  virtual ~TurbModel_EUL();
+  TurbModel_RBF();
+  virtual ~TurbModel_RBF();
 
   // Data memebers
 public:
@@ -190,6 +198,8 @@ public:
   mat U, V;
   cube J, K, H, W;
   mat var;
+
+  mat Dhat;
 
   double Gn[3][3], Gv[3][3], C1[3][3];
   double eps;
@@ -217,6 +227,8 @@ public:
 
   virtual void calcRhs(mat &rhs, mat &var, double dt);
 
+  virtual void correction();
+
   virtual void inputs(double (*G)[3]);
 
   virtual void outputs();
@@ -225,6 +237,33 @@ public:
 
   void writeData(double St);
 
+  void rhsFromDhat(mat &rhs, mat &var, double dt);
+
+};
+
+class TurbModel_RBFQR: public TurbModel_RBF
+{
+  // Constructors & Destructor
+public:
+  TurbModel_RBFQR();
+  virtual ~TurbModel_RBFQR();
+
+  // Data memebers
+public:
+  mat Rtran;
+
+  // Memeber functions
+public:
+  void initialHookScalarRansTurbModel(double Stau, double *struc, double &eps_init,
+  		                                double *prod, double *rapRedi, double (*G)[3]);
+
+  void rbfqr(mat &Ainv, mat &Rtran, mat &U, mat &V);
+
+  void sphericalHarmonics(int mu, mat &sph, mat &sphl, mat &spht);
+
+  double sphericalCoeff(int mu);
+
+  virtual void outputs();
 };
 
 #endif
